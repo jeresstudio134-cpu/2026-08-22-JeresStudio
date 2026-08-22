@@ -4,13 +4,12 @@
   @media print {
     @page {
       size: auto;
-      margin: 6mm 10mm;
+      margin: 6mm 8mm;
     }
     
     html, body {
       width: 100% !important;
       height: auto !important;
-      min-height: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
       background: #ffffff !important;
@@ -79,6 +78,77 @@
       page-break-inside: avoid !important;
       break-inside: avoid !important;
     }
+
+    /* SPECIFIC RULES FOR LANDSCAPE PRINT ORIENTATION (Fits exactly on 1 sheet) */
+    @media (orientation: landscape) {
+      @page {
+        margin: 4mm 6mm !important;
+      }
+
+      html, body {
+        font-size: 10px !important;
+        line-height: 1.25 !important;
+      }
+
+      .print-a4-sheet {
+        padding: 0 !important;
+        font-size: 10px !important;
+        line-height: 1.25 !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+
+      .print-header-section {
+        padding-bottom: 4px !important;
+        margin-bottom: 5px !important;
+      }
+
+      .print-logo-box {
+        width: 44px !important;
+        height: 44px !important;
+        max-width: 44px !important;
+        max-height: 44px !important;
+      }
+
+      .print-customer-box {
+        padding: 4px 8px !important;
+        margin-bottom: 5px !important;
+      }
+
+      .print-table {
+        margin-bottom: 5px !important;
+      }
+
+      .print-table th,
+      .print-table td {
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+        font-size: 10px !important;
+      }
+
+      .print-summary-box {
+        padding-top: 4px !important;
+        margin-bottom: 4px !important;
+        gap: 10px !important;
+      }
+
+      .print-sig-container {
+        padding-top: 4px !important;
+        margin-bottom: 3px !important;
+      }
+
+      .print-sig-gap {
+        margin-bottom: 16px !important;
+      }
+
+      .print-terms-box {
+        font-size: 8px !important;
+        line-height: 1.15 !important;
+      }
+    }
   }
 }
+
 

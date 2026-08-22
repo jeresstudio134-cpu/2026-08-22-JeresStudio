@@ -99,11 +99,11 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           className="print-a4-sheet p-6 md:p-8 bg-white text-zinc-900 font-sans text-xs print:p-0 print:text-black print:text-[11px]"
         >
           {/* Header Store & Invoice Meta */}
-          <div className="flex justify-between items-start border-b-2 border-zinc-800 pb-3 mb-3 print-avoid-break">
+          <div className="print-header-section flex justify-between items-start border-b-2 border-zinc-800 pb-3 mb-3 print-avoid-break">
             <div className="flex items-start gap-3.5">
               {/* Logo Toko */}
               {settings?.logo_url ? (
-                <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden flex items-center justify-center bg-white">
+                <div className="print-logo-box w-16 h-16 shrink-0 rounded-lg overflow-hidden flex items-center justify-center bg-white">
                   <img
                     src={settings.logo_url}
                     alt={settings.nama_toko || "Logo Toko"}
@@ -112,7 +112,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                   />
                 </div>
               ) : (
-                <div className="w-14 h-14 shrink-0 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-lg print:border print:border-black print:text-black print:bg-transparent">
+                <div className="print-logo-box w-14 h-14 shrink-0 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-lg print:border print:border-black print:text-black print:bg-transparent">
                   JS
                 </div>
               )}
@@ -155,7 +155,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           </div>
 
           {/* Customer Info & Status Bayar */}
-          <div className="grid grid-cols-2 gap-3 p-2.5 bg-zinc-50 rounded-lg border border-zinc-200 mb-3 print:bg-transparent print:border-zinc-400 print:p-2 print-avoid-break">
+          <div className="print-customer-box grid grid-cols-2 gap-3 p-2.5 bg-zinc-50 rounded-lg border border-zinc-200 mb-3 print:bg-transparent print:border-zinc-400 print:p-2 print-avoid-break">
             <div>
               <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Pemesan:</span>
               <p className="text-sm font-bold text-zinc-900">{order.nama_pelanggan}</p>
@@ -173,7 +173,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           </div>
 
           {/* Items Table */}
-          <table className="w-full text-left border-collapse mb-3 print-avoid-break">
+          <table className="print-table w-full text-left border-collapse mb-3 print-avoid-break">
             <thead>
               <tr className="border-y-2 border-zinc-800 text-[10px] uppercase font-bold text-zinc-700 bg-zinc-100 print:bg-transparent">
                 <th className="py-1.5 px-2 w-8 text-center">No</th>
@@ -212,7 +212,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           </table>
 
           {/* Summary & Calculations */}
-          <div className="grid grid-cols-2 gap-4 border-t border-zinc-300 pt-2.5 mb-3 print-avoid-break">
+          <div className="print-summary-box grid grid-cols-2 gap-4 border-t border-zinc-300 pt-2.5 mb-3 print-avoid-break">
             <div className="space-y-1.5">
               {order.catatan && (
                 <div className="p-2 bg-amber-50 rounded border border-amber-200 text-[10px] text-amber-900 print:bg-transparent print:border-zinc-300">
@@ -257,10 +257,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           </div>
 
           {/* Footer Terms & Signatures */}
-          <div className="border-t-2 border-zinc-800 pt-2.5 print-avoid-break">
+          <div className="print-sig-container border-t-2 border-zinc-800 pt-2.5 print-avoid-break">
             <div className="grid grid-cols-3 gap-2 text-center text-xs mb-3">
               <div>
-                <p className="text-zinc-500 mb-6 text-[11px]">Hormat Kami,</p>
+                <p className="print-sig-gap text-zinc-500 mb-6 text-[11px]">Hormat Kami,</p>
                 <p className="font-bold text-zinc-800 border-t border-zinc-300 pt-0.5 inline-block px-4 text-xs">
                   {order.created_by || "Kasir Jeres"}
                 </p>
@@ -271,14 +271,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                 </div>
               </div>
               <div>
-                <p className="text-zinc-500 mb-6 text-[11px]">Penerima / Pelanggan,</p>
+                <p className="print-sig-gap text-zinc-500 mb-6 text-[11px]">Penerima / Pelanggan,</p>
                 <p className="font-bold text-zinc-800 border-t border-zinc-300 pt-0.5 inline-block px-4 text-xs">
                   {order.nama_pelanggan}
                 </p>
               </div>
             </div>
 
-            <div className="text-[8.5px] text-zinc-400 leading-tight">
+            <div className="print-terms-box text-[8.5px] text-zinc-400 leading-tight">
               <span className="font-semibold text-zinc-500">Syarat & Ketentuan: </span>
               {settings?.catatan_nota ||
                 "1. Barang yang sudah dicetak sesuai file yang disetujui tidak dapat dibatalkan. 2. Pelunasan dilakukan saat pengambilan barang. 3. File desain pesanan disimpan maksimal 30 hari."}
