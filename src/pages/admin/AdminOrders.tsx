@@ -476,19 +476,19 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
 
       {/* Orders Container: Desktop Table (>= 1280px / xl) & Tablet/Mobile Responsive Cards (< 1280px) */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-        {/* Desktop Table View (>= 1280px / xl) */}
-        <div className="hidden xl:block">
+        {/* Desktop Table View (>= 1280px / xl) - Full Fit No Horizontal Scroll */}
+        <div className="hidden xl:block w-full overflow-hidden">
           <table className="w-full text-left text-xs border-collapse table-fixed">
             <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400">
               <tr>
-                <th className="py-3.5 px-4 w-[13%]">No. Nota</th>
-                <th className="py-3.5 px-4 w-[17%]">Pelanggan</th>
-                <th className="py-3.5 px-4 w-[14%]">Tanggal / Ambil</th>
-                <th className="py-3.5 px-4 w-[21%]">Item Cetak</th>
-                <th className="py-3.5 px-3 w-[11%]">Status Order</th>
-                <th className="py-3.5 px-3 w-[11%]">Status Bayar</th>
-                <th className="py-3.5 px-3 text-right w-[13%]">Total</th>
-                <th className="py-3.5 px-3 text-center w-[12%]">Cetak & Aksi</th>
+                <th className="py-3.5 pl-4 pr-2 w-[11%]">No. Nota</th>
+                <th className="py-3.5 px-2.5 w-[16%]">Pelanggan</th>
+                <th className="py-3.5 px-2.5 w-[13%]">Tanggal / Ambil</th>
+                <th className="py-3.5 px-2.5 w-[18%]">Item Cetak</th>
+                <th className="py-3.5 px-2 w-[12%]">Status Order</th>
+                <th className="py-3.5 px-2 w-[13%]">Status Bayar</th>
+                <th className="py-3.5 px-2.5 text-right w-[9%]">Total</th>
+                <th className="py-3.5 pl-2 pr-4 text-center w-[8%]">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -504,14 +504,14 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
 
                   return (
                     <tr key={order.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors">
-                      <td className="py-3.5 px-4 align-top">
+                      <td className="py-3.5 pl-4 pr-2 align-top">
                         <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 block text-xs truncate">
                           {order.nomor_nota}
                         </span>
-                        <span className="text-[10px] text-zinc-400">{order.created_by || "Admin"}</span>
+                        <span className="text-[10px] text-zinc-400 block truncate">{order.created_by || "Admin"}</span>
                       </td>
 
-                      <td className="py-3.5 px-4 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         <p className="font-bold text-zinc-900 dark:text-white text-xs truncate">{order.nama_pelanggan}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className="text-[10px] text-zinc-500 font-mono truncate">{order.no_wa}</span>
@@ -527,17 +527,17 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 align-top text-zinc-600 dark:text-zinc-400">
-                        <p className="text-[11px]">{formatTanggal(order.tanggal_order)}</p>
+                      <td className="py-3.5 px-2.5 align-top text-zinc-600 dark:text-zinc-400">
+                        <p className="text-[11px] truncate">{formatTanggal(order.tanggal_order)}</p>
                         {order.tanggal_ambil && (
                           <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 mt-0.5">
                             <Clock className="w-3 h-3 shrink-0" />
-                            <span className="truncate">Deadline: {formatTanggal(order.tanggal_ambil)}</span>
+                            <span className="truncate">{formatTanggal(order.tanggal_ambil)}</span>
                           </p>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-4 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         {order.items && order.items.length > 0 ? (
                           <div className="space-y-0.5">
                             {order.items.slice(0, 2).map((item, idx) => (
@@ -546,7 +546,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                               </p>
                             ))}
                             {order.items.length > 2 && (
-                              <span className="text-[10px] text-zinc-400 italic">
+                              <span className="text-[10px] text-zinc-400 italic block">
                                 +{order.items.length - 2} item lainnya
                               </span>
                             )}
@@ -556,11 +556,11 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                         )}
                       </td>
 
-                      <td className="py-3.5 px-3 align-top">
+                      <td className="py-3.5 px-2 align-top">
                         <select
                           value={order.status}
                           onChange={(e) => handleQuickStatus(order.id, e.target.value)}
-                          className={`w-full text-[11px] font-bold px-2 py-1 rounded-lg border focus:outline-none cursor-pointer ${statusBadge.bg}`}
+                          className={`w-full text-[11px] font-bold px-2 py-1 rounded-lg border focus:outline-none cursor-pointer truncate ${statusBadge.bg}`}
                         >
                           <option value="pending">Pending</option>
                           <option value="proses">Dalam Proses</option>
@@ -569,50 +569,49 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                         </select>
                       </td>
 
-                      <td className="py-3.5 px-3 align-top">
+                      <td className="py-3.5 px-2 align-top">
                         <select
                           value={order.status_bayar}
                           onChange={(e) => handleQuickBayar(order.id, e.target.value)}
-                          className={`w-full text-[11px] font-bold px-2 py-1 rounded-lg border focus:outline-none cursor-pointer ${bayarBadge.bg}`}
+                          className={`w-full text-[11px] font-bold px-2 py-1 rounded-lg border focus:outline-none cursor-pointer truncate ${bayarBadge.bg}`}
                         >
                           <option value="belum">Belum Bayar</option>
                           <option value="dp">DP (Uang Muka)</option>
                           <option value="lunas">Lunas</option>
                         </select>
                         {order.status_bayar === "dp" && order.jumlah_dp > 0 && (
-                          <p className="text-[10px] text-zinc-500 mt-0.5 font-mono truncate">
+                          <p className="text-[10px] text-zinc-500 mt-1 font-mono truncate font-medium">
                             DP: {formatRupiah(order.jumlah_dp)}
                           </p>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-3 align-top text-right">
-                        <p className="font-mono font-bold text-zinc-900 dark:text-white text-xs">
+                      <td className="py-3.5 px-2.5 align-top text-right">
+                        <p className="font-mono font-bold text-zinc-900 dark:text-white text-xs truncate">
                           {formatRupiah(order.total)}
                         </p>
                         {order.diskon > 0 && (
-                          <p className="text-[10px] text-rose-500 font-mono">
-                            Diskon: {formatRupiah(order.diskon)}
+                          <p className="text-[10px] text-rose-500 font-mono truncate">
+                            -{formatRupiah(order.diskon)}
                           </p>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-3 align-top text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                      <td className="py-3.5 pl-2 pr-4 align-top text-center">
+                        <div className="flex items-center justify-center gap-1">
                           {/* Print Nota */}
                           <button
                             onClick={() => onPrintOrder(order)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
-                            title="Cetak Nota"
+                            className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer shrink-0"
+                            title="Cetak Nota A4"
                           >
-                            <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                            Cetak Nota
+                            <Printer className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Edit */}
                           <button
                             onClick={() => handleOpenEdit(order)}
-                            className="p-1.5 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer"
+                            className="p-1.5 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer shrink-0"
                             title="Edit Order"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -621,7 +620,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                           {/* Delete */}
                           <button
                             onClick={() => handleDeleteOrder(order.id, order.nomor_nota)}
-                            className="p-1.5 text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer"
+                            className="p-1.5 text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer shrink-0"
                             title="Hapus Order"
                           >
                             <Trash2 className="w-3.5 h-3.5" />

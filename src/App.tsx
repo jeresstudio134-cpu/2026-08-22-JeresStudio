@@ -136,95 +136,97 @@ function MainApp() {
   // --- RENDER VIEW ---
   return (
     <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans transition-colors selection:bg-indigo-500 selection:text-white">
-      {viewScope === "public" ? (
-        // PUBLIC WEBSITE
-        <>
-          <Navbar
-            currentTab={publicTab}
-            setCurrentTab={handlePublicNavigate}
-            onOpenLogin={handleOpenLogin}
-            darkMode={darkMode}
-            setDarkMode={setDarkMode}
-            settings={settings}
-          />
-
-          <main className="flex-1">
-            {publicTab === "beranda" && (
-              <LandingPage
-                products={products}
-                settings={settings}
-                onNavigate={handlePublicNavigate}
-              />
-            )}
-            {publicTab === "pricelist" && (
-              <PublicPriceList products={products} settings={settings} />
-            )}
-            {publicTab === "kontak" && <ContactPage settings={settings} />}
-          </main>
-
-          <Footer
-            settings={settings}
-            onNavigate={handlePublicNavigate}
-            onOpenLogin={handleOpenLogin}
-          />
-        </>
-      ) : (
-        // ADMIN PORTAL
-        <>
-          {!isAuthenticated ? (
-            <AdminLogin
-              onBackToPublic={handleBackToPublic}
-              onLoginSuccess={() => {
-                setViewScope("admin");
-                setAdminTab("dashboard");
-                refreshDeadlineAlerts();
-              }}
-            />
-          ) : (
-            <AdminLayout
-              currentAdminTab={adminTab}
-              setCurrentAdminTab={setAdminTab}
-              onBackToPublic={handleBackToPublic}
+      <div id="main-app-wrapper" className="min-h-screen flex flex-col flex-1 print:hidden">
+        {viewScope === "public" ? (
+          // PUBLIC WEBSITE
+          <>
+            <Navbar
+              currentTab={publicTab}
+              setCurrentTab={handlePublicNavigate}
+              onOpenLogin={handleOpenLogin}
               darkMode={darkMode}
               setDarkMode={setDarkMode}
-              deadlineCount={deadlineCount}
               settings={settings}
-            >
-              {adminTab === "dashboard" && (
-                <AdminDashboard
-                  onNavigateOrders={() => setAdminTab("orders")}
-                  onNavigateProducts={() => setAdminTab("products")}
-                  onNavigateFinance={() => setAdminTab("finance")}
-                  onPrintOrder={(order) => setPrintableOrder(order)}
+            />
+
+            <main className="flex-1">
+              {publicTab === "beranda" && (
+                <LandingPage
+                  products={products}
                   settings={settings}
+                  onNavigate={handlePublicNavigate}
                 />
               )}
-
-              {adminTab === "orders" && (
-                <AdminOrders
-                  onPrintOrder={(order) => setPrintableOrder(order)}
-                  settings={settings}
-                />
+              {publicTab === "pricelist" && (
+                <PublicPriceList products={products} settings={settings} />
               )}
+              {publicTab === "kontak" && <ContactPage settings={settings} />}
+            </main>
 
-              {adminTab === "products" && <AdminProducts />}
+            <Footer
+              settings={settings}
+              onNavigate={handlePublicNavigate}
+              onOpenLogin={handleOpenLogin}
+            />
+          </>
+        ) : (
+          // ADMIN PORTAL
+          <>
+            {!isAuthenticated ? (
+              <AdminLogin
+                onBackToPublic={handleBackToPublic}
+                onLoginSuccess={() => {
+                  setViewScope("admin");
+                  setAdminTab("dashboard");
+                  refreshDeadlineAlerts();
+                }}
+              />
+            ) : (
+              <AdminLayout
+                currentAdminTab={adminTab}
+                setCurrentAdminTab={setAdminTab}
+                onBackToPublic={handleBackToPublic}
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                deadlineCount={deadlineCount}
+                settings={settings}
+              >
+                {adminTab === "dashboard" && (
+                  <AdminDashboard
+                    onNavigateOrders={() => setAdminTab("orders")}
+                    onNavigateProducts={() => setAdminTab("products")}
+                    onNavigateFinance={() => setAdminTab("finance")}
+                    onPrintOrder={(order) => setPrintableOrder(order)}
+                    settings={settings}
+                  />
+                )}
 
-              {adminTab === "vendors" && <AdminVendors />}
+                {adminTab === "orders" && (
+                  <AdminOrders
+                    onPrintOrder={(order) => setPrintableOrder(order)}
+                    settings={settings}
+                  />
+                )}
 
-              {adminTab === "finance" && <AdminFinance settings={settings} />}
+                {adminTab === "products" && <AdminProducts />}
 
-              {adminTab === "settings" && (
-                <AdminSettings
-                  settings={settings}
-                  onRefreshSettings={loadInitialData}
-                />
-              )}
-            </AdminLayout>
-          )}
-        </>
-      )}
+                {adminTab === "vendors" && <AdminVendors />}
 
-      {/* A5 Printable Invoice Modal */}
+                {adminTab === "finance" && <AdminFinance settings={settings} />}
+
+                {adminTab === "settings" && (
+                  <AdminSettings
+                    settings={settings}
+                    onRefreshSettings={loadInitialData}
+                  />
+                )}
+              </AdminLayout>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* A4 Printable Invoice Modal */}
       {printableOrder && (
         <PrintInvoiceModal
           isOpen={Boolean(printableOrder)}
