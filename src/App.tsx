@@ -227,6 +227,7 @@ function MainApp() {
       {/* A5 Printable Invoice Modal */}
       {printableOrder && (
         <PrintInvoiceModal
+          isOpen={Boolean(printableOrder)}
           order={printableOrder}
           settings={settings}
           onClose={() => setPrintableOrder(null)}

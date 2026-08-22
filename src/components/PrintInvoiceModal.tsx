@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useEffect } from "react";
 import { Order, StoreSettings } from "../types/index.js";
 import { formatRupiah, formatTanggal, getStatusBayarBadge } from "../lib/utils.js";
 import { Printer, X, Download, Phone, MapPin, Mail, CheckCircle2 } from "lucide-react";
@@ -6,31 +6,55 @@ import { Printer, X, Download, Phone, MapPin, Mail, CheckCircle2 } from "lucide-
 interface PrintInvoiceModalProps {
   order: Order | null;
   settings: StoreSettings | null;
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
 }
 
 export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   order,
   settings,
-  isOpen,
+  isOpen = true,
   onClose,
 }) => {
   const printContentRef = useRef<HTMLDivElement>(null);
 
-  if (!isOpen || !order) return null;
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    if (order && isOpen) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [order, isOpen, onClose]);
+
+  if (!order || isOpen === false) return null;
 
   const handlePrint = () => {
-    window.print();
+    try {
+      window.print();
+    } catch (err) {
+      console.error("Print error:", err);
+    }
   };
 
   const statusBayar = getStatusBayarBadge(order.status_bayar);
   const sisaBayar = Math.max(0, order.total - (order.jumlah_dp || 0));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto print:p-0 print:bg-white print:static">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto print:p-0 print:bg-white print:static"
+    >
       {/* Container Dialog */}
-      <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden my-8 print:border-none print:shadow-none print:m-0 print:max-w-none print:w-full">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden my-8 print:border-none print:shadow-none print:m-0 print:max-w-none print:w-full"
+      >
         {/* Action Header - Hidden on Print */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 print:hidden">
           <div className="flex items-center gap-2">
