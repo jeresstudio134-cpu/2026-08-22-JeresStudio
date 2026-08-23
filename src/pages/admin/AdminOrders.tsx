@@ -482,14 +482,14 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
           <table className="w-full text-left text-xs border-collapse table-fixed">
             <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400">
               <tr>
-                <th className="py-3.5 pl-4 pr-2 w-[11%]">No. Nota</th>
-                <th className="py-3.5 px-2.5 w-[16%]">Pelanggan</th>
-                <th className="py-3.5 px-2.5 w-[13%]">Tanggal / Ambil</th>
-                <th className="py-3.5 px-2.5 w-[18%]">Item Cetak</th>
-                <th className="py-3.5 px-2 w-[12%]">Status Order</th>
-                <th className="py-3.5 px-2 w-[13%]">Status Bayar</th>
-                <th className="py-3.5 px-2.5 text-right w-[9%]">Total</th>
-                <th className="py-3.5 pl-2 pr-4 text-center w-[8%]">Aksi</th>
+                <th className="py-3.5 pl-4 pr-2 w-[10%]">No. Nota</th>
+                <th className="py-3.5 px-2.5 w-[15%]">Pelanggan</th>
+                <th className="py-3.5 px-2.5 w-[12%]">Tanggal / Ambil</th>
+                <th className="py-3.5 px-2.5 w-[17%]">Item Cetak</th>
+                <th className="py-3.5 px-2 w-[11%]">Status Order</th>
+                <th className="py-3.5 px-2 w-[12%]">Status Bayar</th>
+                <th className="py-3.5 px-3 text-right w-[11%]">Total</th>
+                <th className="py-3.5 pl-2 pr-4 text-center w-[12%]">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -587,19 +587,19 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                         )}
                       </td>
 
-                      <td className="py-3.5 px-2.5 align-top text-right">
-                        <p className="font-mono font-bold text-zinc-900 dark:text-white text-xs truncate">
+                      <td className="py-3.5 px-3 align-top text-right whitespace-nowrap">
+                        <p className="font-mono font-bold text-zinc-900 dark:text-white text-xs">
                           {formatRupiah(order.total)}
                         </p>
                         {order.diskon > 0 && (
-                          <p className="text-[10px] text-rose-500 font-mono truncate">
+                          <p className="text-[10px] text-rose-500 font-mono">
                             -{formatRupiah(order.diskon)}
                           </p>
                         )}
                       </td>
 
-                      <td className="py-3.5 pl-2 pr-4 align-top text-center">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="py-3.5 pl-2 pr-4 align-top text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
                           {/* Dropdown Cetak (Kledo-style) */}
                           <PrintDropdown
                             order={order}
