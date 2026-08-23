@@ -20,11 +20,49 @@ import { AdminVendors } from "./pages/admin/AdminVendors.js";
 import { AdminFinance } from "./pages/admin/AdminFinance.js";
 import { AdminSettings } from "./pages/admin/AdminSettings.js";
 
-// Print Invoice Dedicated Page
-import { PdfInvoicePage } from "./pages/admin/PdfInvoicePage.js";
+// Dedicated Print Page & Types
+import { DedicatedPrintPage } from "./pages/print/DedicatedPrintPage.js";
+import { DocumentType } from "./components/print/PrintDocumentRenderer.js";
+
+// PDF Generator
+import { downloadInvoicePdf } from "./lib/generateInvoicePdf.js";
+
+function getInitialPrintRoute(): { isPrint: boolean; docType: DocumentType; orderId: string | null } {
+  const path = window.location.pathname;
+  const hash = window.location.hash;
+  const search = new URLSearchParams(window.location.search);
+
+  // Check /print/:docType/:orderId
+  const pathMatch = path.match(/^\/print\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)/);
+  if (pathMatch) {
+    let dt = pathMatch[1] as DocumentType;
+    if (dt === ("rekap" as any)) dt = "rekap-pembayaran";
+    return { isPrint: true, docType: dt, orderId: pathMatch[2] };
+  }
+
+  // Check hash #/print/:docType/:orderId
+  const hashMatch = hash.match(/^#\/print\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)/);
+  if (hashMatch) {
+    let dt = hashMatch[1] as DocumentType;
+    if (dt === ("rekap" as any)) dt = "rekap-pembayaran";
+    return { isPrint: true, docType: dt, orderId: hashMatch[2] };
+  }
+
+  // Check search params ?print=nota&id=123
+  if (search.get("print")) {
+    let dt = (search.get("print") || "nota") as DocumentType;
+    if (dt === ("rekap" as any)) dt = "rekap-pembayaran";
+    return { isPrint: true, docType: dt, orderId: search.get("id") || search.get("orderId") };
+  }
+
+  return { isPrint: false, docType: "nota", orderId: null };
+}
 
 function MainApp() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
+
+  // Print route state for dedicated print view
+  const [printRoute, setPrintRoute] = useState(getInitialPrintRoute);
 
   // Navigation state
   // 'public' or 'admin'
@@ -44,8 +82,22 @@ function MainApp() {
     return localStorage.getItem("jeres_theme") === "dark";
   });
 
-  // Printable Order Modal
-  const [printableOrder, setPrintableOrder] = useState<Order | null>(null);
+  const handlePrintOrder = async (order: Order) => {
+    try {
+      await downloadInvoicePdf(order, settings);
+    } catch (err) {
+      console.error("Gagal generate PDF:", err);
+    }
+  };
+
+  // Popstate listener to handle browser back/forward for print route
+  useEffect(() => {
+    const handlePopState = () => {
+      setPrintRoute(getInitialPrintRoute());
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (darkMode) {
@@ -133,12 +185,22 @@ function MainApp() {
     );
   }
 
-  if (printableOrder) {
+  // --- DEDICATED PRINT ROUTE VIEW (/print/:type/:id) ---
+  if (printRoute.isPrint) {
     return (
-      <PdfInvoicePage
-        order={printableOrder}
-        settings={settings}
-        onBack={() => setPrintableOrder(null)}
+      <DedicatedPrintPage
+        initialDocType={printRoute.docType}
+        orderId={printRoute.orderId || undefined}
+        initialSettings={settings}
+        autoPrint={true}
+        onClose={() => {
+          if (window.opener) {
+            window.close();
+          } else {
+            window.history.pushState({}, "", "/");
+            setPrintRoute({ isPrint: false, docType: "nota", orderId: null });
+          }
+        }}
       />
     );
   }
@@ -206,14 +268,14 @@ function MainApp() {
                     onNavigateOrders={() => setAdminTab("orders")}
                     onNavigateProducts={() => setAdminTab("products")}
                     onNavigateFinance={() => setAdminTab("finance")}
-                    onPrintOrder={(order) => setPrintableOrder(order)}
+                    onPrintOrder={handlePrintOrder}
                     settings={settings}
                   />
                 )}
 
                 {adminTab === "orders" && (
                   <AdminOrders
-                    onPrintOrder={(order) => setPrintableOrder(order)}
+                    onPrintOrder={handlePrintOrder}
                     settings={settings}
                   />
                 )}

@@ -32,20 +32,6 @@ export function formatTanggalInput(dateStr: string | undefined | null): string {
   }
 }
 
-export function formatTanggalNumeric(dateStr: string | undefined | null): string {
-  if (!dateStr) return "-";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "-";
-    const day = String(d.getDate()).padStart(2, "0");
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  } catch {
-    return dateStr || "-";
-  }
-}
-
 export function getStatusBadge(status: string) {
   switch (status?.toLowerCase()) {
     case "pending":
@@ -89,11 +75,15 @@ export function createWALink(phone: string, text: string): string {
   return `https://wa.me/${target}?text=${encodeURIComponent(text)}`;
 }
 
-export function angkaTerbilang(nominal: number | string | undefined | null): string {
-  const n = typeof nominal === "string" ? Number(nominal) : nominal;
-  if (n === undefined || n === null || isNaN(n) || n === 0) return "Nol Rupiah";
+/**
+ * Konversi angka rupiah menjadi format terbilang dalam Bahasa Indonesia.
+ * Contoh: 32000 -> "Tiga Puluh Dua Ribu Rupiah"
+ */
+export function terbilang(angka: number | string | undefined | null): string {
+  const num = typeof angka === "string" ? Number(angka) : angka;
+  if (num === undefined || num === null || isNaN(num) || num <= 0) return "Nol Rupiah";
 
-  const satuan = [
+  const huruf = [
     "",
     "Satu",
     "Dua",
@@ -108,32 +98,29 @@ export function angkaTerbilang(nominal: number | string | undefined | null): str
     "Sebelas",
   ];
 
-  function convert(num: number): string {
-    num = Math.floor(Math.abs(num));
-    if (num < 12) {
-      return satuan[num];
-    } else if (num < 20) {
-      return convert(num - 10) + " Belas";
-    } else if (num < 100) {
-      return convert(Math.floor(num / 10)) + " Puluh " + convert(num % 10);
-    } else if (num < 200) {
-      return "Seratus " + convert(num - 100);
-    } else if (num < 1000) {
-      return convert(Math.floor(num / 100)) + " Ratus " + convert(num % 100);
-    } else if (num < 2000) {
-      return "Seribu " + convert(num - 1000);
-    } else if (num < 1000000) {
-      return convert(Math.floor(num / 1000)) + " Ribu " + convert(num % 1000);
-    } else if (num < 1000000000) {
-      return convert(Math.floor(num / 1000000)) + " Juta " + convert(num % 1000000);
-    } else if (num < 1000000000000) {
-      return convert(Math.floor(num / 1000000000)) + " Miliar " + convert(num % 1000000000);
-    } else if (num < 1000000000000000) {
-      return convert(Math.floor(num / 1000000000000)) + " Triliun " + convert(num % 1000000000000);
+  function convert(n: number): string {
+    if (n < 12) {
+      return huruf[n];
+    } else if (n < 20) {
+      return convert(n - 10) + " Belas";
+    } else if (n < 100) {
+      return convert(Math.floor(n / 10)) + " Puluh " + convert(n % 10);
+    } else if (n < 200) {
+      return "Seratus " + convert(n - 100);
+    } else if (n < 1000) {
+      return convert(Math.floor(n / 100)) + " Ratus " + convert(n % 100);
+    } else if (n < 2000) {
+      return "Seribu " + convert(n - 1000);
+    } else if (n < 1000000) {
+      return convert(Math.floor(n / 1000)) + " Ribu " + convert(n % 1000);
+    } else if (n < 1000000000) {
+      return convert(Math.floor(n / 1000000)) + " Juta " + convert(n % 1000000);
+    } else if (n < 1000000000000) {
+      return convert(Math.floor(n / 1000000000)) + " Miliar " + convert(n % 1000000000);
     }
-    return "";
+    return convert(Math.floor(n / 1000000000000)) + " Triliun " + convert(n % 1000000000000);
   }
 
-  const hasil = convert(n).replace(/\s+/g, " ").trim();
-  return (hasil ? hasil + " Rupiah" : "Nol Rupiah");
+  const hasil = convert(Math.floor(num)).replace(/\s+/g, " ").trim();
+  return hasil ? `${hasil} Rupiah` : "Nol Rupiah";
 }

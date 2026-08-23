@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { DashboardStats, Order, StoreSettings } from "../../types/index.js";
 import { api } from "../../lib/api.js";
 import { formatRupiah, formatTanggal, getStatusBadge, getStatusBayarBadge } from "../../lib/utils.js";
+import { PrintDropdown } from "../../components/PrintDropdown.js";
 import {
   DollarSign,
   ShoppingBag,
@@ -431,14 +432,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {formatRupiah(order.total)}
                       </td>
                       <td className="py-4 px-6 text-center">
-                        <button
-                          onClick={() => onPrintOrder(order)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                          title="Cetak Nota A5"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-indigo-500" />
-                          Nota
-                        </button>
+                        <PrintDropdown
+                          order={order}
+                          settings={settings}
+                          variant="table"
+                        />
                       </td>
                     </tr>
                   );
@@ -502,13 +500,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => onPrintOrder(order)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 rounded-lg border border-indigo-200 dark:border-indigo-800 cursor-pointer"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Nota</span>
-                    </button>
+                    <PrintDropdown
+                      order={order}
+                      settings={settings}
+                      variant="button"
+                    />
                   </div>
                 </div>
               );

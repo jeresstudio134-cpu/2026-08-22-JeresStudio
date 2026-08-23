@@ -1,6 +1,6 @@
 {
   "name": "Jeres Studio",
-  "description": "Full-stack web application untuk Toko Percetakan & Digital (Stiker, DTF, Banner, Jersey, Desain) dengan CRUD Price List, Manajemen Orderan, Halaman PDF Invoice Generator A4 Fixed Layout, Vendor/Kulakan, Dashboard & Integrasi Neon PostgreSQL.",
+  "description": "Full-stack web application untuk Toko Percetakan & Digital (Stiker, DTF, Banner, Jersey, Desain) dengan CRUD Price List, Manajemen Orderan, Cetak Nota A5, Vendor/Kulakan, Dashboard & Integrasi Vercel + Neon PostgreSQL.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
