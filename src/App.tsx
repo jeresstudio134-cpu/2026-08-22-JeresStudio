@@ -20,8 +20,8 @@ import { AdminVendors } from "./pages/admin/AdminVendors.js";
 import { AdminFinance } from "./pages/admin/AdminFinance.js";
 import { AdminSettings } from "./pages/admin/AdminSettings.js";
 
-// Print Component
-import { PrintInvoiceModal } from "./components/PrintInvoiceModal.js";
+// Print Invoice Dedicated Page
+import { PdfInvoicePage } from "./pages/admin/PdfInvoicePage.js";
 
 function MainApp() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
@@ -133,6 +133,16 @@ function MainApp() {
     );
   }
 
+  if (printableOrder) {
+    return (
+      <PdfInvoicePage
+        order={printableOrder}
+        settings={settings}
+        onBack={() => setPrintableOrder(null)}
+      />
+    );
+  }
+
   // --- RENDER VIEW ---
   return (
     <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans transition-colors selection:bg-indigo-500 selection:text-white">
@@ -225,16 +235,6 @@ function MainApp() {
           </>
         )}
       </div>
-
-      {/* A4 Printable Invoice Modal */}
-      {printableOrder && (
-        <PrintInvoiceModal
-          isOpen={Boolean(printableOrder)}
-          order={printableOrder}
-          settings={settings}
-          onClose={() => setPrintableOrder(null)}
-        />
-      )}
     </div>
   );
 }
