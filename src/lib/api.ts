@@ -421,4 +421,15 @@ export const api = {
   // Activities
   getActivities: () =>
     request<{ activities: any[] }>("/api/activities"),
+
+  // Integrations Status (Gemini, Resend, Cloudinary, Neon)
+  getIntegrationsStatus: () =>
+    request<{
+      integrations: {
+        neon: { name: string; connected: boolean; description: string };
+        gemini: { name: string; connected: boolean; description: string };
+        resend: { name: string; connected: boolean; description: string };
+        cloudinary: { name: string; connected: boolean; description: string };
+      };
+    }>("/api/integrations/status"),
 };

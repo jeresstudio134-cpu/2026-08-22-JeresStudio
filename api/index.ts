@@ -7,6 +7,26 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { memoryDb, isNeonConnected, db } from "../src/db/index.js";
 import * as schema from "../src/db/schema.js";
 import { eq, desc } from "drizzle-orm";
+import {
+  getDatabaseStatus,
+  initNeonTables,
+  persistProduct,
+  persistDeleteProduct,
+  persistOrder,
+  persistDeleteOrder,
+  persistTransaction,
+  persistDeleteTransaction,
+  persistStoreSettings,
+  persistAdminUser,
+  persistDeleteAdminUser,
+  persistVendor,
+  persistDeleteVendor,
+  persistProductVendor,
+  persistDeleteProductVendor,
+  persistGuide,
+  persistDeleteGuide,
+  persistActivityLog,
+} from "../src/db/neonService.js";
 
 const app = express();
 
@@ -15,6 +35,38 @@ app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 app.use(cookieParser());
 
 const JWT_SECRET = process.env.JWT_SECRET || "jeres-studio-secret-key-super-secure-2025";
+
+// Database Status & Diagnostics Endpoint
+app.get("/api/db/status", async (req: Request, res: Response) => {
+  try {
+    const status = await getDatabaseStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({
+      connected: false,
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+      databaseHost: "Error",
+      tableCount: 0,
+      tables: [],
+      lastChecked: new Date().toISOString(),
+      error: err.message || String(err),
+    });
+  }
+});
+
+// Manual Database Init & Table Sync Trigger
+app.post("/api/db/init", async (req: Request, res: Response) => {
+  try {
+    const result = await initNeonTables();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      message: "Gagal inisialisasi tabel: " + (err.message || String(err)),
+      tableCount: 0,
+    });
+  }
+});
 
 // Helper to generate public share token
 function generateShareToken(): string {
@@ -74,6 +126,7 @@ function logActivity(userName: string, action: string, details: string) {
       created_at: new Date().toISOString(),
     };
     memoryDb.activityLogs.unshift(newLog);
+    persistActivityLog(newLog).catch(() => {});
   } catch (e) {
     console.error("Log activity error:", e);
   }
@@ -243,6 +296,7 @@ app.post("/api/auth/staff", authenticateToken, (req: Request, res: Response) => 
   };
 
   memoryDb.adminUsers.push(newUser);
+  persistAdminUser(newUser).catch(() => {});
   logActivity(currentUser.nama, "Tambah Staff", `Menambahkan user baru: ${nama} (${newUser.role})`);
 
   res.status(201).json({
@@ -311,6 +365,7 @@ app.put("/api/auth/staff/:id", authenticateToken, (req: Request, res: Response) 
     targetUser.password_hash = bcrypt.hashSync(password.trim(), 10);
   }
 
+  persistAdminUser(targetUser).catch(() => {});
   logActivity(currentUser.nama, "Edit User", `Memperbarui data user: ${targetUser.nama} (${targetUser.username})`);
 
   res.json({
@@ -347,6 +402,7 @@ app.delete("/api/auth/staff/:id", authenticateToken, (req: Request, res: Respons
 
   const removedUser = memoryDb.adminUsers[targetIdx];
   memoryDb.adminUsers.splice(targetIdx, 1);
+  persistDeleteAdminUser(staffId).catch(() => {});
   logActivity(currentUser.nama, "Hapus Staff", `Menghapus akun: ${removedUser.nama} (${removedUser.username})`);
 
   res.json({ message: "Akun staff berhasil dihapus." });
@@ -378,6 +434,7 @@ app.post("/api/auth/change-password", authenticateToken, (req: Request, res: Res
   }
 
   user.password_hash = bcrypt.hashSync(newPassword, 10);
+  persistAdminUser(user).catch(() => {});
   logActivity(currentUser.nama, "Ganti Password", `Mengubah password user: ${user.nama}`);
 
   res.json({ message: "Password berhasil diperbarui." });
@@ -488,6 +545,7 @@ app.post("/api/products", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.products.push(newProduct);
+  persistProduct(newProduct).catch(() => {});
   logActivity(currentUser.nama, "Tambah Produk", `Menambahkan ${newProduct.nama_item} (Rp ${newProduct.harga})`);
 
   res.status(201).json({ message: "Produk berhasil ditambahkan", product: newProduct });
@@ -530,6 +588,7 @@ app.put("/api/products/:id", authenticateToken, (req: Request, res: Response) =>
     updated_at: new Date().toISOString(),
   };
 
+  persistProduct(memoryDb.products[index]).catch(() => {});
   logActivity(currentUser.nama, "Edit Produk", `Memperbarui produk ${memoryDb.products[index].nama_item}`);
 
   res.json({ message: "Produk berhasil diperbarui", product: memoryDb.products[index] });
@@ -547,6 +606,7 @@ app.delete("/api/products/:id", authenticateToken, (req: Request, res: Response)
   }
 
   const deleted = memoryDb.products.splice(index, 1)[0];
+  persistDeleteProduct(id).catch(() => {});
   logActivity(currentUser.nama, "Hapus Produk", `Menghapus produk ${deleted.nama_item}`);
 
   res.json({ message: "Produk berhasil dihapus" });
@@ -571,6 +631,7 @@ app.patch("/api/products/:id/toggle", authenticateToken, (req: Request, res: Res
   }
   product.updated_at = new Date().toISOString();
 
+  persistProduct(product).catch(() => {});
   logActivity(currentUser.nama, "Update Status Produk", `Ubah ${field} produk ${product.nama_item}`);
   res.json({ message: "Status produk berhasil diubah", product });
 });
@@ -624,6 +685,7 @@ function recordOrderCashPayment(params: {
   };
 
   memoryDb.transactions.push(newTx);
+  persistTransaction(newTx).catch(() => {});
   return newTx;
 }
 
@@ -783,6 +845,7 @@ app.post("/api/orders", authenticateToken, (req: Request, res: Response) => {
     return itemRecord;
   });
 
+  persistOrder(newOrder, savedItems).catch(() => {});
   logActivity(currentUser.nama, "Buat Order Baru", `Nota ${invoiceNumber} untuk ${nama_pelanggan} (Total: Rp ${calculatedTotal.toLocaleString()})`);
 
   // Auto-record cash in to Pemasukan Toko if payment is made at order creation
@@ -983,9 +1046,10 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
     updated_at: new Date().toISOString(),
   };
 
+  const currentItems = memoryDb.orderItems.filter((i) => i.order_id === id);
+  persistOrder(memoryDb.orders[orderIndex], currentItems).catch(() => {});
   logActivity(currentUser.nama, "Update Order", `Memperbarui nota ${memoryDb.orders[orderIndex].nomor_nota}`);
 
-  const currentItems = memoryDb.orderItems.filter((i) => i.order_id === id);
   res.json({
     message: "Order berhasil diperbarui",
     order: {
@@ -1081,6 +1145,8 @@ app.patch("/api/orders/:id/status", authenticateToken, (req: Request, res: Respo
     }
   }
 
+  const orderItems = memoryDb.orderItems.filter((i) => i.order_id === id);
+  persistOrder(order, orderItems).catch(() => {});
   logActivity(currentUser.nama, "Ubah Status Order", `Nota ${order.nomor_nota} diubah status menjadi: ${order.status}, bayar: ${order.status_bayar}`);
 
   res.json({ message: "Status order berhasil diperbarui", order });
@@ -1111,6 +1177,9 @@ app.post("/api/orders/:id/share", authenticateToken, (req: Request, res: Respons
   } else {
     order.share_expires_at = null;
   }
+
+  const orderItems = memoryDb.orderItems.filter((i) => i.order_id === id);
+  persistOrder(order, orderItems).catch(() => {});
 
   // Determine origin URL
   const forwardedProto = (req.headers["x-forwarded-proto"] as string) || "https";
@@ -1164,6 +1233,9 @@ app.post("/api/orders/:id/progress-notes", authenticateToken, (req: Request, res
   notes.push(newNote);
   order.progress_notes = notes;
   order.updated_at = new Date().toISOString();
+
+  const orderItems = memoryDb.orderItems.filter((i) => i.order_id === id);
+  persistOrder(order, orderItems).catch(() => {});
 
   logActivity(currentUser.nama, "Tambah Progres Order", `Menambahkan catatan progres pada nota ${order.nomor_nota}: ${detail.trim()}`);
 
@@ -1266,6 +1338,7 @@ app.delete("/api/orders/:id", authenticateToken, (req: Request, res: Response) =
 
   const deleted = memoryDb.orders.splice(index, 1)[0];
   memoryDb.orderItems = memoryDb.orderItems.filter((i) => i.order_id !== id);
+  persistDeleteOrder(id).catch(() => {});
 
   logActivity(currentUser.nama, "Hapus Order", `Menghapus nota ${deleted.nomor_nota}`);
 
@@ -1339,6 +1412,7 @@ app.post("/api/vendors", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.vendors.push(newVendor);
+  persistVendor(newVendor).catch(() => {});
   logActivity(currentUser.nama, "Tambah Vendor", `Menambahkan supplier ${newVendor.nama_vendor}`);
 
   res.status(201).json({ message: "Vendor berhasil ditambahkan", vendor: newVendor });
@@ -1372,6 +1446,7 @@ app.put("/api/vendors/:id", authenticateToken, (req: Request, res: Response) => 
     updated_at: new Date().toISOString(),
   };
 
+  persistVendor(memoryDb.vendors[index]).catch(() => {});
   logActivity(currentUser.nama, "Update Vendor", `Memperbarui vendor ${memoryDb.vendors[index].nama_vendor}`);
   res.json({ message: "Vendor berhasil diperbarui", vendor: memoryDb.vendors[index] });
 });
@@ -1393,6 +1468,7 @@ app.delete("/api/vendors/:id", authenticateToken, (req: Request, res: Response) 
     memoryDb.product_vendors = memoryDb.product_vendors.filter((pv) => pv.vendor_id !== id);
   }
 
+  persistDeleteVendor(id).catch(() => {});
   logActivity(currentUser.nama, "Hapus Vendor", `Menghapus supplier ${deleted.nama_vendor}`);
   res.json({ message: "Vendor berhasil dihapus" });
 });
@@ -1500,6 +1576,8 @@ app.post("/api/products/:id/vendors", authenticateToken, (req: Request, res: Res
       vendor_catatan: vendor.catatan || "",
     };
 
+    persistProductVendor(memoryDb.product_vendors[existingIndex]).catch(() => {});
+
     logActivity(
       currentUser.nama,
       "Update Vendor Produk",
@@ -1526,6 +1604,7 @@ app.post("/api/products/:id/vendors", authenticateToken, (req: Request, res: Res
   };
 
   memoryDb.product_vendors.push(newPV);
+  persistProductVendor(newPV).catch(() => {});
 
   const resultWithVendor = {
     ...newPV,
@@ -1564,6 +1643,7 @@ app.put("/api/product-vendors/:id", authenticateToken, (req: Request, res: Respo
     memoryDb.product_vendors.forEach((pv) => {
       if (pv.product_id === targetPV.product_id) {
         pv.is_default = false;
+        persistProductVendor(pv).catch(() => {});
       }
     });
   }
@@ -1575,6 +1655,8 @@ app.put("/api/product-vendors/:id", authenticateToken, (req: Request, res: Respo
     is_default: is_default !== undefined ? Boolean(is_default) : targetPV.is_default,
     updated_at: new Date().toISOString(),
   };
+
+  persistProductVendor(memoryDb.product_vendors[index]).catch(() => {});
 
   const vendor = (memoryDb.vendors || []).find((v) => v.id === targetPV.vendor_id);
   const product = memoryDb.products.find((p) => p.id === targetPV.product_id);
@@ -1610,11 +1692,14 @@ app.delete("/api/product-vendors/:id", authenticateToken, (req: Request, res: Re
   }
 
   const deleted = memoryDb.product_vendors.splice(index, 1)[0];
+  persistDeleteProductVendor(id).catch(() => {});
+
   const remainingForProduct = memoryDb.product_vendors.filter((pv) => pv.product_id === deleted.product_id);
 
   // If deleted was default and others remain, set first remaining as default
   if (deleted.is_default && remainingForProduct.length > 0) {
     remainingForProduct[0].is_default = true;
+    persistProductVendor(remainingForProduct[0]).catch(() => {});
   }
 
   const vendor = (memoryDb.vendors || []).find((v) => v.id === deleted.vendor_id);
@@ -1650,6 +1735,7 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
     if (prod && item.updatePrice && item.newPrice !== undefined && Number(item.newPrice) > 0) {
       prod.harga = Math.round(Number(item.newPrice));
       prod.updated_at = new Date().toISOString();
+      persistProduct(prod).catch(() => {});
       updatedProductCount++;
     }
 
@@ -1664,11 +1750,12 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
       if (pvIndex !== -1) {
         memoryDb.product_vendors[pvIndex].harga_modal = newCost;
         memoryDb.product_vendors[pvIndex].updated_at = new Date().toISOString();
+        persistProductVendor(memoryDb.product_vendors[pvIndex]).catch(() => {});
         updatedVendorCostCount++;
       } else {
         // Create new relation if not yet linked
         const newId = memoryDb.product_vendors.length ? Math.max(...memoryDb.product_vendors.map((pv) => pv.id)) + 1 : 1;
-        memoryDb.product_vendors.push({
+        const newPvRecord = {
           id: newId,
           product_id: prodId,
           vendor_id: vId,
@@ -1676,7 +1763,9 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
           is_default: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        });
+        };
+        memoryDb.product_vendors.push(newPvRecord);
+        persistProductVendor(newPvRecord).catch(() => {});
         updatedVendorCostCount++;
       }
     }
@@ -1729,6 +1818,8 @@ app.put("/api/settings/margin-threshold", authenticateToken, (req: Request, res:
     margin_threshold_warning: String(warning),
     updated_at: new Date().toISOString(),
   };
+
+  persistStoreSettings(memoryDb.storeSettings).catch(() => {});
 
   logActivity(
     currentUser.nama,
@@ -2517,6 +2608,7 @@ app.post("/api/transactions", authenticateToken, (req: Request, res: Response) =
   };
 
   memoryDb.transactions.push(newTx);
+  persistTransaction(newTx).catch(() => {});
 
   logActivity(
     currentUser.nama,
@@ -2617,6 +2709,7 @@ app.post("/api/transactions/auto-allocate-order", authenticateToken, (req: Reque
       };
 
       memoryDb.transactions.push(newTx);
+      persistTransaction(newTx).catch(() => {});
       createdTransactions.push(newTx);
     }
   });
@@ -2675,6 +2768,8 @@ app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response
     updated_at: new Date().toISOString(),
   };
 
+  persistTransaction(memoryDb.transactions[index]).catch(() => {});
+
   logActivity(
     currentUser.nama,
     "Update Transaksi",
@@ -2699,6 +2794,8 @@ app.delete("/api/transactions/:id", authenticateToken, (req: Request, res: Respo
   }
 
   const deleted = memoryDb.transactions.splice(index, 1)[0];
+  persistDeleteTransaction(id).catch(() => {});
+
   logActivity(
     currentUser.nama,
     "Hapus Transaksi",
@@ -2830,6 +2927,7 @@ app.put("/api/settings", authenticateToken, (req: Request, res: Response) => {
   };
 
   logActivity(currentUser.nama, "Update Pengaturan Toko", "Memperbarui profil dan format nota toko");
+  persistStoreSettings(memoryDb.storeSettings).catch(() => {});
   res.json({ message: "Pengaturan toko berhasil disimpan", settings: memoryDb.storeSettings });
 });
 
@@ -2957,6 +3055,7 @@ app.post("/api/guides", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.guides.push(newGuide);
+  persistGuide(newGuide).catch(() => {});
 
   logActivity(
     currentUser.nama,
@@ -2999,6 +3098,7 @@ app.put("/api/guides/:id", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.guides[guideIndex] = updatedGuide;
+  persistGuide(updatedGuide).catch(() => {});
 
   logActivity(
     currentUser.nama,
@@ -3022,6 +3122,7 @@ app.delete("/api/guides/:id", authenticateToken, (req: Request, res: Response) =
 
   const deletedGuide = memoryDb.guides[guideIndex];
   memoryDb.guides.splice(guideIndex, 1);
+  persistDeleteGuide(guideId).catch(() => {});
 
   logActivity(
     currentUser.nama,
@@ -3038,17 +3139,94 @@ app.get("/api/activities", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Image Upload Helper (Base64 / Cloudinary helper)
-app.post("/api/upload", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/upload", authenticateToken, async (req: Request, res: Response) => {
   const { dataUrl, filename } = req.body;
   if (!dataUrl) {
     res.status(400).json({ error: "Data URL gambar diperlukan" });
     return;
   }
 
-  // If using dataUrl, return as image previewable URL directly or simulate cloud upload
+  const cloudinaryUrl = process.env.CLOUDINARY_URL;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || (cloudinaryUrl ? cloudinaryUrl.split("@")[1] : null);
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || "unsigned_preset";
+
+  // If Cloudinary credentials are provided, upload to Cloudinary API
+  if (cloudinaryUrl || process.env.CLOUDINARY_CLOUD_NAME) {
+    try {
+      if (cloudinaryUrl && !process.env.CLOUDINARY_CLOUD_NAME) {
+        // Parse cloudinary://api_key:api_secret@cloud_name
+        const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+        if (match) {
+          const [, apiKey, apiSecret, cName] = match;
+          const timestamp = Math.round(new Date().getTime() / 1000);
+          const crypto = await import("crypto");
+          const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${apiSecret}`).digest("hex");
+          
+          const formData = new URLSearchParams();
+          formData.append("file", dataUrl);
+          formData.append("api_key", apiKey);
+          formData.append("timestamp", String(timestamp));
+          formData.append("signature", signature);
+
+          const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cName}/image/upload`, {
+            method: "POST",
+            body: formData,
+          });
+
+          const uploadData = await uploadRes.json();
+          if (uploadRes.ok && uploadData.secure_url) {
+            res.json({
+              url: uploadData.secure_url,
+              filename: filename || uploadData.original_filename || "uploaded_image.png",
+              provider: "cloudinary",
+            });
+            return;
+          }
+        }
+      }
+    } catch (cErr: any) {
+      console.warn("Cloudinary upload failed, fallback to direct dataUrl:", cErr?.message || cErr);
+    }
+  }
+
+  // Direct dataUrl storage (standard inline / data URI)
   res.json({
     url: dataUrl,
     filename: filename || "uploaded_image.png",
+    provider: "local_base64",
+  });
+});
+
+// System Integrations Status Endpoint
+app.get("/api/integrations/status", (req: Request, res: Response) => {
+  const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+  const hasResend = Boolean(process.env.RESEND_API_KEY);
+  const hasCloudinary = Boolean(process.env.CLOUDINARY_URL || (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY));
+  const hasNeon = Boolean(process.env.DATABASE_URL);
+
+  res.json({
+    integrations: {
+      neon: {
+        name: "Neon PostgreSQL",
+        connected: hasNeon,
+        description: "Penyimpanan database relasional awan (Orders, Produk, Transaksi, Users).",
+      },
+      gemini: {
+        name: "Google Gemini AI",
+        connected: hasGemini,
+        description: "AI OCR Scanner nota kulakan / struk belanja dan auto-kategorisasi transaksi.",
+      },
+      resend: {
+        name: "Resend Email API",
+        connected: hasResend,
+        description: "Pengiriman invoice / nota tagihan pelanggan langsung via email resmi.",
+      },
+      cloudinary: {
+        name: "Cloudinary Image Hosting",
+        connected: hasCloudinary,
+        description: "Penyimpanan cloud media gambar produk & foto logo toko secara eksternal.",
+      },
+    },
   });
 });
 
