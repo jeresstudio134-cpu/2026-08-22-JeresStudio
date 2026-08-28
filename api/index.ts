@@ -138,11 +138,6 @@ function getGeminiClient() {
   }
   return new GoogleGenAI({
     apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
   });
 }
 
@@ -2421,12 +2416,20 @@ app.post("/api/transactions/scan-receipt", authenticateToken, async (req: Reques
     let mimeType = "image/jpeg";
 
     if (image.startsWith("data:")) {
-      const matches = image.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        mimeType = matches[1];
-        base64Data = matches[2];
+      const match = image.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1] || "image/jpeg";
+        base64Data = match[2];
+      } else {
+        const commaIdx = image.indexOf(",");
+        if (commaIdx !== -1) {
+          base64Data = image.substring(commaIdx + 1);
+        }
       }
     }
+
+    // Sanitize base64 data to strip unwanted whitespace/newlines
+    base64Data = base64Data.replace(/[\r\n\s]+/g, "");
 
     const ai = getGeminiClient();
 
@@ -2463,10 +2466,9 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
 11. confidence_notes: Keterangan singkat mengenai kejelasan pembacaan gambar oleh AI.`;
 
     const candidateModels = [
-      "gemini-2.5-flash",
-      "gemini-flash-latest",
       "gemini-3.7-flash",
-      "gemini-2.5-pro",
+      "gemini-3.1-flash-lite",
+      "gemini-flash-latest",
     ];
 
     let lastError: any = null;
@@ -2477,19 +2479,15 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
         try {
           const response = await ai.models.generateContent({
             model: modelName,
-            contents: {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType,
-                    data: base64Data,
-                  },
+            contents: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
                 },
-                {
-                  text: promptText,
-                },
-              ],
-            },
+              },
+              promptText,
+            ],
             config: {
               responseMimeType: "application/json",
               responseSchema: {
@@ -2526,10 +2524,31 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
 
           let rawText = (response.text || "").trim();
           if (rawText.startsWith("```")) {
-            rawText = rawText.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
+            rawText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+          }
+
+          const firstBrace = rawText.indexOf("{");
+          const lastBrace = rawText.lastIndexOf("}");
+          if (firstBrace !== -1 && lastBrace !== -1) {
+            rawText = rawText.substring(firstBrace, lastBrace + 1);
           }
 
           parsedJson = JSON.parse(rawText || "{}");
+
+          // Clean up parsed output numbers
+          if (parsedJson) {
+            if (parsedJson.nominal !== undefined) {
+              parsedJson.nominal = Math.round(Number(String(parsedJson.nominal).replace(/[^0-9.-]+/g, "")) || 0);
+            }
+            if (Array.isArray(parsedJson.items)) {
+              parsedJson.items = parsedJson.items.map((it: any) => ({
+                nama_item: String(it.nama_item || "").trim(),
+                qty: Number(it.qty) || 1,
+                harga_satuan: Math.round(Number(String(it.harga_satuan).replace(/[^0-9.-]+/g, "")) || 0),
+                subtotal: Math.round(Number(String(it.subtotal).replace(/[^0-9.-]+/g, "")) || 0),
+              }));
+            }
+          }
           break; // success
         } catch (err: any) {
           lastError = err;
@@ -2573,6 +2592,36 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
 
     res.status(500).json({
       error: userMsg,
+    });
+  }
+});
+
+// Test Gemini AI Connection Endpoint
+app.post("/api/gemini/test", authenticateToken, async (req: Request, res: Response) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    res.json({
+      success: false,
+      message: "GEMINI_API_KEY belum dikonfigurasi di Environment Variables.",
+    });
+    return;
+  }
+
+  try {
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: "Tes koneksi sistem percetakan Jeres Studio. Balas dengan teks: 'Google Gemini AI Aktif dan Siap Digunakan'",
+    });
+    res.json({
+      success: true,
+      message: "Koneksi Google Gemini AI SUKSES! Model 'gemini-3.7-flash' aktif dan siap memindai nota struk.",
+      sampleResponse: response.text?.trim() || "OK",
+    });
+  } catch (err: any) {
+    res.json({
+      success: false,
+      message: err.message || "Gagal terhubung ke Google Gemini AI API.",
     });
   }
 });

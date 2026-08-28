@@ -245,19 +245,35 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
         reader.readAsDataURL(file);
       });
 
+      let finalLogoUrl = dataUrl;
+
       // Attempt upload via API
       try {
         const uploadRes = await api.uploadImage(dataUrl, file.name);
-        setStoreForm((prev) => ({ ...prev, logo_url: uploadRes.url }));
+        finalLogoUrl = uploadRes.url;
         if (uploadRes.provider === "cloudinary") {
-          setPasteNotice("✓ Logo berhasil diunggah ke Cloudinary CDN!");
+          setPasteNotice("✓ Logo berhasil diunggah ke Cloudinary CDN & diperbarui!");
         } else {
-          setPasteNotice("✓ Logo berhasil dimuat (Penyimpanan data URL)!");
+          setPasteNotice("✓ Logo berhasil diperbarui!");
         }
-      } catch {
-        setStoreForm((prev) => ({ ...prev, logo_url: dataUrl }));
-        setPasteNotice("✓ Logo berhasil dimuat!");
+      } catch (uploadErr) {
+        console.warn("Upload API error, saving directly as dataUrl", uploadErr);
+        setPasteNotice("✓ Logo berhasil diperbarui!");
       }
+
+      setStoreForm((prev) => ({ ...prev, logo_url: finalLogoUrl }));
+
+      // Auto-save to settings in real-time so sidebar, header & print templates update immediately
+      try {
+        await api.updateSettings({
+          ...storeForm,
+          logo_url: finalLogoUrl,
+        });
+        onRefreshSettings();
+      } catch (saveErr) {
+        console.warn("Failed to auto-save settings with new logo:", saveErr);
+      }
+
       setTimeout(() => setPasteNotice(null), 3500);
     } catch (err: any) {
       setPasteNotice("Gagal memproses gambar logo.");
@@ -641,7 +657,10 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 {/* Logo Preview Dropzone */}
                 <div
-                  onClick={() => logoInputRef.current?.click()}
+                  onClick={() => {
+                    if (logoInputRef.current) logoInputRef.current.value = "";
+                    logoInputRef.current?.click();
+                  }}
                   title="Klik untuk ganti logo atau drag file ke sini"
                   className={`relative w-24 h-24 rounded-xl border-2 border-dashed bg-white dark:bg-slate-900 flex items-center justify-center p-2 shadow-xs shrink-0 overflow-hidden group cursor-pointer transition-colors ${
                     isDraggingLogo
@@ -649,7 +668,12 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                       : "border-slate-300 dark:border-slate-700 hover:border-indigo-400"
                   }`}
                 >
-                  {storeForm.logo_url ? (
+                  {isUploadingLogo ? (
+                    <div className="flex flex-col items-center justify-center text-indigo-600 dark:text-indigo-400">
+                      <RefreshCw className="w-6 h-6 animate-spin mb-1" />
+                      <span className="text-[9px] font-semibold">Mengunggah...</span>
+                    </div>
+                  ) : storeForm.logo_url ? (
                     <img
                       src={storeForm.logo_url}
                       alt="Logo Toko"
@@ -670,9 +694,14 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                     type="file"
                     accept="image/*"
                     className="hidden"
+                    onClick={(e) => {
+                      (e.target as HTMLInputElement).value = "";
+                    }}
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
-                        handleLogoFileUpload(e.target.files[0]);
+                        const file = e.target.files[0];
+                        e.target.value = "";
+                        handleLogoFileUpload(file);
                       }
                     }}
                   />
@@ -681,11 +710,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                     {/* Choose File Button */}
                     <button
                       type="button"
-                      onClick={() => logoInputRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xs transition-colors cursor-pointer"
+                      disabled={isUploadingLogo}
+                      onClick={() => {
+                        if (logoInputRef.current) logoInputRef.current.value = "";
+                        logoInputRef.current?.click();
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      <Upload className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span>Upload / Pilih File</span>
+                      <Upload className={`w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ${isUploadingLogo ? "animate-pulse" : ""}`} />
+                      <span>{isUploadingLogo ? "Sedang Mengunggah..." : "Upload / Pilih File"}</span>
                     </button>
 
                     {/* Copy Image URL */}
@@ -705,7 +738,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                     {storeForm.logo_url && (
                       <button
                         type="button"
-                        onClick={() => setStoreForm((prev) => ({ ...prev, logo_url: "" }))}
+                        onClick={async () => {
+                          setStoreForm((prev) => ({ ...prev, logo_url: "" }));
+                          try {
+                            await api.updateSettings({ ...storeForm, logo_url: "" });
+                            onRefreshSettings();
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
                         className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
