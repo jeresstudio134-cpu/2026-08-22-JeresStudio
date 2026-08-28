@@ -36,6 +36,33 @@ app.use(cookieParser());
 
 const JWT_SECRET = process.env.JWT_SECRET || "jeres-studio-secret-key-super-secure-2025";
 
+// Auto initialization flag for serverless / Vercel environments
+let isTablesInitialized = false;
+let initPromise: Promise<any> | null = null;
+
+function ensureTablesInitialized() {
+  if (isTablesInitialized) return;
+  if (!initPromise) {
+    initPromise = initNeonTables()
+      .then((res) => {
+        isTablesInitialized = true;
+        console.log("[Auto-Init Neon]", res.message);
+      })
+      .catch((err) => {
+        console.error("[Auto-Init Neon Error]", err);
+      })
+      .finally(() => {
+        initPromise = null;
+      });
+  }
+}
+
+// Middleware to ensure Neon tables exist on first serverless invocation
+app.use((req: Request, res: Response, next: NextFunction) => {
+  ensureTablesInitialized();
+  next();
+});
+
 // Database Status & Diagnostics Endpoint
 app.get("/api/db/status", async (req: Request, res: Response) => {
   try {
@@ -54,10 +81,11 @@ app.get("/api/db/status", async (req: Request, res: Response) => {
   }
 });
 
-// Manual Database Init & Table Sync Trigger
-app.post("/api/db/init", async (req: Request, res: Response) => {
+// Database Init & Table Sync Trigger (Supports both GET & POST)
+const handleDbInit = async (req: Request, res: Response) => {
   try {
     const result = await initNeonTables();
+    isTablesInitialized = true;
     res.json(result);
   } catch (err: any) {
     res.status(500).json({
@@ -66,7 +94,10 @@ app.post("/api/db/init", async (req: Request, res: Response) => {
       tableCount: 0,
     });
   }
-});
+};
+
+app.post("/api/db/init", handleDbInit);
+app.get("/api/db/init", handleDbInit);
 
 // Helper to generate public share token
 function generateShareToken(): string {
@@ -3147,28 +3178,55 @@ app.post("/api/upload", authenticateToken, async (req: Request, res: Response) =
   }
 
   const cloudinaryUrl = process.env.CLOUDINARY_URL;
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || (cloudinaryUrl ? cloudinaryUrl.split("@")[1] : null);
+  const cloudName = process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME || (cloudinaryUrl ? cloudinaryUrl.split("@")[1] : null);
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
   const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || "unsigned_preset";
 
   // If Cloudinary credentials are provided, upload to Cloudinary API
-  if (cloudinaryUrl || process.env.CLOUDINARY_CLOUD_NAME) {
+  if (cloudName && (apiKey && apiSecret || cloudinaryUrl || uploadPreset)) {
     try {
-      if (cloudinaryUrl && !process.env.CLOUDINARY_CLOUD_NAME) {
+      if (cloudName && apiKey && apiSecret) {
+        const timestamp = Math.round(new Date().getTime() / 1000);
+        const crypto = await import("crypto");
+        const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${apiSecret}`).digest("hex");
+        
+        const formData = new URLSearchParams();
+        formData.append("file", dataUrl);
+        formData.append("api_key", apiKey);
+        formData.append("timestamp", String(timestamp));
+        formData.append("signature", signature);
+
+        const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadData = await uploadRes.json();
+        if (uploadRes.ok && uploadData.secure_url) {
+          res.json({
+            url: uploadData.secure_url,
+            filename: filename || uploadData.original_filename || "uploaded_image.png",
+            provider: "cloudinary",
+          });
+          return;
+        }
+      } else if (cloudinaryUrl && !cloudName) {
         // Parse cloudinary://api_key:api_secret@cloud_name
         const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
         if (match) {
-          const [, apiKey, apiSecret, cName] = match;
+          const [, parsedApiKey, parsedApiSecret, parsedCName] = match;
           const timestamp = Math.round(new Date().getTime() / 1000);
           const crypto = await import("crypto");
-          const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${apiSecret}`).digest("hex");
+          const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${parsedApiSecret}`).digest("hex");
           
           const formData = new URLSearchParams();
           formData.append("file", dataUrl);
-          formData.append("api_key", apiKey);
+          formData.append("api_key", parsedApiKey);
           formData.append("timestamp", String(timestamp));
           formData.append("signature", signature);
 
-          const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cName}/image/upload`, {
+          const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${parsedCName}/image/upload`, {
             method: "POST",
             body: formData,
           });
@@ -3201,7 +3259,10 @@ app.post("/api/upload", authenticateToken, async (req: Request, res: Response) =
 app.get("/api/integrations/status", (req: Request, res: Response) => {
   const hasGemini = Boolean(process.env.GEMINI_API_KEY);
   const hasResend = Boolean(process.env.RESEND_API_KEY);
-  const hasCloudinary = Boolean(process.env.CLOUDINARY_URL || (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY));
+  const hasCloudinary = Boolean(
+    process.env.CLOUDINARY_URL ||
+    ((process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME) && process.env.CLOUDINARY_API_KEY)
+  );
   const hasNeon = Boolean(process.env.DATABASE_URL);
 
   res.json({
@@ -3277,6 +3338,7 @@ app.post("/api/send-invoice-email", optionalAuth, async (req: Request, res: Resp
     const emailBody = message || `Halo, berikut adalah tagihan pesanan Anda di ${storeName}.`;
 
     const resendApiKey = process.env.RESEND_API_KEY;
+    const resendFromEmail = process.env.RESEND_FROM_EMAIL || `${storeName} <onboarding@resend.dev>`;
 
     if (resendApiKey) {
       // Call Resend API via native fetch
@@ -3287,7 +3349,7 @@ app.post("/api/send-invoice-email", optionalAuth, async (req: Request, res: Resp
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: `${storeName} <onboarding@resend.dev>`,
+          from: resendFromEmail,
           to: [recipientEmail],
           subject: emailSubject,
           text: emailBody,

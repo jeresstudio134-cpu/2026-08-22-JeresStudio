@@ -422,6 +422,23 @@ export const api = {
   getActivities: () =>
     request<{ activities: any[] }>("/api/activities"),
 
+  // Database Management
+  getDbStatus: () =>
+    request<{
+      connected: boolean;
+      databaseUrlConfigured: boolean;
+      databaseHost: string;
+      tableCount: number;
+      tables: Array<{ name: string; rowCount: number }>;
+      lastChecked: string;
+      error?: string;
+    }>("/api/db/status"),
+
+  initDatabase: () =>
+    request<{ success: boolean; message: string; tableCount: number }>("/api/db/init", {
+      method: "POST",
+    }),
+
   // Integrations Status (Gemini, Resend, Cloudinary, Neon)
   getIntegrationsStatus: () =>
     request<{
