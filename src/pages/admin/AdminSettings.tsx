@@ -51,6 +51,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
   const [dbInitNotice, setDbInitNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
   const [sqlCopied, setSqlCopied] = useState(false);
+  const [testingCloudinary, setTestingCloudinary] = useState(false);
+  const [cloudinaryNotice, setCloudinaryNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   // Store Profile Form
   const [storeForm, setStoreForm] = useState({
@@ -183,6 +186,33 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
     }
   };
 
+  const handleTestCloudinary = async () => {
+    try {
+      setTestingCloudinary(true);
+      setCloudinaryNotice(null);
+      const res = await api.testCloudinary();
+      if (res.success) {
+        setCloudinaryNotice({
+          type: "success",
+          message: res.message,
+        });
+        await fetchIntegrations();
+      } else {
+        setCloudinaryNotice({
+          type: "error",
+          message: res.message || "Gagal menguji koneksi Cloudinary.",
+        });
+      }
+    } catch (err: any) {
+      setCloudinaryNotice({
+        type: "error",
+        message: err.message || "Terjadi kesalahan saat menguji Cloudinary.",
+      });
+    } finally {
+      setTestingCloudinary(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "staff") fetchStaff();
     if (activeTab === "logs") fetchLogs();
@@ -193,7 +223,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
   const [logoCopied, setLogoCopied] = useState(false);
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
-  const handleLogoFileUpload = (file: File) => {
+  const handleLogoFileUpload = async (file: File) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       alert("Mohon pilih file gambar (PNG, JPG, SVG, WebP)");
@@ -203,15 +233,38 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
       alert("Ukuran file logo maksimal 2MB");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setStoreForm((prev) => ({ ...prev, logo_url: reader.result as string }));
-        setPasteNotice("Logo berhasil dimuat!");
-        setTimeout(() => setPasteNotice(null), 3000);
+
+    try {
+      setIsUploadingLogo(true);
+      setPasteNotice("Mengunggah gambar logo...");
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Attempt upload via API
+      try {
+        const uploadRes = await api.uploadImage(dataUrl, file.name);
+        setStoreForm((prev) => ({ ...prev, logo_url: uploadRes.url }));
+        if (uploadRes.provider === "cloudinary") {
+          setPasteNotice("✓ Logo berhasil diunggah ke Cloudinary CDN!");
+        } else {
+          setPasteNotice("✓ Logo berhasil dimuat (Penyimpanan data URL)!");
+        }
+      } catch {
+        setStoreForm((prev) => ({ ...prev, logo_url: dataUrl }));
+        setPasteNotice("✓ Logo berhasil dimuat!");
       }
-    };
-    reader.readAsDataURL(file);
+      setTimeout(() => setPasteNotice(null), 3500);
+    } catch (err: any) {
+      setPasteNotice("Gagal memproses gambar logo.");
+      setTimeout(() => setPasteNotice(null), 3000);
+    } finally {
+      setIsUploadingLogo(false);
+    }
   };
 
   // Handle Paste from Clipboard directly via Button
@@ -1158,26 +1211,70 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                      Cloudinary Hosting
+                      Cloudinary Image Hosting
                     </h4>
-                    <p className="text-[10px] text-slate-500 font-mono">CLOUDINARY_URL</p>
+                    <p className="text-[10px] text-slate-500 font-mono">CLOUDINARY_NAME & API_KEY & API_SECRET</p>
                   </div>
                 </div>
                 {integrationStatus?.cloudinary?.connected ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <CheckCircle2 className="w-3 h-3" /> Terhubung
+                    <CheckCircle2 className="w-3 h-3" /> Terhubung ({integrationStatus?.cloudinary?.cloudName || "Cloud"})
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                    <ImageIcon className="w-3 h-3" /> Base64 / Local URL
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                    <AlertCircle className="w-3 h-3" /> Perlu API Secret
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Penyimpanan foto produk katalog dan logo toko ke CDN cloud eksternal.
+                Penyimpanan foto produk katalog dan logo toko ke CDN cloud eksternal agar link gambar langsung online dan hemat memori database.
               </p>
-              <div className="text-[11px] text-slate-500 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
-                <strong>Status:</strong> {integrationStatus?.cloudinary?.connected ? "Upload otomatis ke Cloudinary aktif." : "Upload gambar tersimpan langsung dalam format base64/URL."}
+
+              {cloudinaryNotice && (
+                <div
+                  className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                    cloudinaryNotice.type === "success"
+                      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                      : "bg-rose-50 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                  }`}
+                >
+                  {cloudinaryNotice.type === "success" ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  )}
+                  <span>{cloudinaryNotice.message}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={handleTestCloudinary}
+                  disabled={testingCloudinary}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingCloudinary ? "animate-spin" : ""}`} />
+                  {testingCloudinary ? "Menguji Koneksi..." : "🧪 Test Upload ke Cloudinary"}
+                </button>
+              </div>
+
+              <div className="text-[11px] text-slate-500 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
+                <div>
+                  <strong>Cloud Name:</strong>{" "}
+                  <span className="font-mono text-slate-700 dark:text-slate-300">
+                    {integrationStatus?.cloudinary?.cloudName || "Belum terdeteksi"}
+                  </span>
+                </div>
+                <div>
+                  <strong>Status Kunci:</strong>{" "}
+                  {integrationStatus?.cloudinary?.hasApiSecret ? (
+                    <span className="text-emerald-600 font-medium">✓ Lengkap (API Key & Secret Terpasang)</span>
+                  ) : (
+                    <span className="text-amber-600 font-medium">
+                      ⚠️ Kurang <strong>CLOUDINARY_API_SECRET</strong> di Vercel Environment Variables.
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -439,6 +439,32 @@ export const api = {
       method: "POST",
     }),
 
+  // Image Uploading & Cloud Hosting (Cloudinary / Local)
+  uploadImage: (dataUrl: string, filename?: string) =>
+    request<{
+      url: string;
+      filename: string;
+      provider: "cloudinary" | "local_base64";
+      format?: string;
+      bytes?: number;
+      notice?: string;
+    }>("/api/upload", {
+      method: "POST",
+      body: JSON.stringify({ dataUrl, filename }),
+    }),
+
+  testCloudinary: () =>
+    request<{
+      success: boolean;
+      message: string;
+      url?: string;
+      cloudName?: string;
+      missingKeys?: string[];
+      details?: any;
+    }>("/api/cloudinary/test", {
+      method: "POST",
+    }),
+
   // Integrations Status (Gemini, Resend, Cloudinary, Neon)
   getIntegrationsStatus: () =>
     request<{
@@ -446,7 +472,15 @@ export const api = {
         neon: { name: string; connected: boolean; description: string };
         gemini: { name: string; connected: boolean; description: string };
         resend: { name: string; connected: boolean; description: string };
-        cloudinary: { name: string; connected: boolean; description: string };
+        cloudinary: {
+          name: string;
+          connected: boolean;
+          cloudName?: string | null;
+          hasApiKey?: boolean;
+          hasApiSecret?: boolean;
+          missingKeys?: string[];
+          description: string;
+        };
       };
     }>("/api/integrations/status"),
 };

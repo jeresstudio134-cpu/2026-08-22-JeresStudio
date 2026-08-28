@@ -209,7 +209,9 @@ export const AdminProducts: React.FC = () => {
     setTimeout(() => setProductPasteNotice(null), 3000);
   };
 
-  const processImageFiles = (files: FileList | File[]) => {
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+
+  const processImageFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
     const validFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
 
@@ -218,17 +220,37 @@ export const AdminProducts: React.FC = () => {
       return;
     }
 
-    const readers = validFiles.map((file) => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-    });
+    try {
+      setIsUploadingImages(true);
+      setProductPasteNotice("Mengunggah & mengompres gambar...");
 
-    Promise.all(readers).then((results) => {
-      addImagesToList(results);
-    });
+      const uploadedUrls: string[] = [];
+
+      for (const file of validFiles) {
+        // Read file as base64
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        try {
+          // Upload to Cloudinary / server
+          const uploadRes = await api.uploadImage(dataUrl, file.name);
+          uploadedUrls.push(uploadRes.url);
+        } catch {
+          // Fallback to dataUrl directly if offline or error
+          uploadedUrls.push(dataUrl);
+        }
+      }
+
+      addImagesToList(uploadedUrls);
+    } catch (err: any) {
+      setFormError("Gagal memproses gambar: " + (err.message || "Unknown error"));
+    } finally {
+      setIsUploadingImages(false);
+    }
   };
 
   const handleImageFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

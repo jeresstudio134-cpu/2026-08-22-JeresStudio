@@ -3177,70 +3177,50 @@ app.post("/api/upload", authenticateToken, async (req: Request, res: Response) =
     return;
   }
 
+  let cloudName = process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME;
+  let apiKey = process.env.CLOUDINARY_API_KEY;
+  let apiSecret = process.env.CLOUDINARY_API_SECRET;
   const cloudinaryUrl = process.env.CLOUDINARY_URL;
-  const cloudName = process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME || (cloudinaryUrl ? cloudinaryUrl.split("@")[1] : null);
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
-  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || "unsigned_preset";
+
+  if (cloudinaryUrl) {
+    const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+    if (match) {
+      apiKey = apiKey || match[1];
+      apiSecret = apiSecret || match[2];
+      cloudName = cloudName || match[3];
+    }
+  }
 
   // If Cloudinary credentials are provided, upload to Cloudinary API
-  if (cloudName && (apiKey && apiSecret || cloudinaryUrl || uploadPreset)) {
+  if (cloudName && apiKey && apiSecret) {
     try {
-      if (cloudName && apiKey && apiSecret) {
-        const timestamp = Math.round(new Date().getTime() / 1000);
-        const crypto = await import("crypto");
-        const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${apiSecret}`).digest("hex");
-        
-        const formData = new URLSearchParams();
-        formData.append("file", dataUrl);
-        formData.append("api_key", apiKey);
-        formData.append("timestamp", String(timestamp));
-        formData.append("signature", signature);
+      const timestamp = Math.round(new Date().getTime() / 1000);
+      const crypto = await import("crypto");
+      const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${apiSecret}`).digest("hex");
+      
+      const formData = new URLSearchParams();
+      formData.append("file", dataUrl);
+      formData.append("api_key", apiKey);
+      formData.append("timestamp", String(timestamp));
+      formData.append("signature", signature);
 
-        const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-          method: "POST",
-          body: formData,
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const uploadData = await uploadRes.json();
+      if (uploadRes.ok && uploadData.secure_url) {
+        res.json({
+          url: uploadData.secure_url,
+          filename: filename || uploadData.original_filename || "uploaded_image.png",
+          provider: "cloudinary",
+          format: uploadData.format,
+          bytes: uploadData.bytes,
         });
-
-        const uploadData = await uploadRes.json();
-        if (uploadRes.ok && uploadData.secure_url) {
-          res.json({
-            url: uploadData.secure_url,
-            filename: filename || uploadData.original_filename || "uploaded_image.png",
-            provider: "cloudinary",
-          });
-          return;
-        }
-      } else if (cloudinaryUrl && !cloudName) {
-        // Parse cloudinary://api_key:api_secret@cloud_name
-        const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
-        if (match) {
-          const [, parsedApiKey, parsedApiSecret, parsedCName] = match;
-          const timestamp = Math.round(new Date().getTime() / 1000);
-          const crypto = await import("crypto");
-          const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${parsedApiSecret}`).digest("hex");
-          
-          const formData = new URLSearchParams();
-          formData.append("file", dataUrl);
-          formData.append("api_key", parsedApiKey);
-          formData.append("timestamp", String(timestamp));
-          formData.append("signature", signature);
-
-          const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${parsedCName}/image/upload`, {
-            method: "POST",
-            body: formData,
-          });
-
-          const uploadData = await uploadRes.json();
-          if (uploadRes.ok && uploadData.secure_url) {
-            res.json({
-              url: uploadData.secure_url,
-              filename: filename || uploadData.original_filename || "uploaded_image.png",
-              provider: "cloudinary",
-            });
-            return;
-          }
-        }
+        return;
+      } else {
+        console.warn("[Cloudinary API Error]", uploadData?.error?.message || uploadData);
       }
     } catch (cErr: any) {
       console.warn("Cloudinary upload failed, fallback to direct dataUrl:", cErr?.message || cErr);
@@ -3252,17 +3232,109 @@ app.post("/api/upload", authenticateToken, async (req: Request, res: Response) =
     url: dataUrl,
     filename: filename || "uploaded_image.png",
     provider: "local_base64",
+    notice: cloudName && (!apiKey || !apiSecret)
+      ? "CLOUDINARY_API_SECRET belum diatur di Environment Variables. Gambar disimpan sebagai data URL."
+      : undefined,
   });
+});
+
+// Test Cloudinary Connection Endpoint
+app.post("/api/cloudinary/test", authenticateToken, async (req: Request, res: Response) => {
+  let cloudName = process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME;
+  let apiKey = process.env.CLOUDINARY_API_KEY;
+  let apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudinaryUrl = process.env.CLOUDINARY_URL;
+
+  if (cloudinaryUrl) {
+    const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+    if (match) {
+      apiKey = apiKey || match[1];
+      apiSecret = apiSecret || match[2];
+      cloudName = cloudName || match[3];
+    }
+  }
+
+  const missingKeys: string[] = [];
+  if (!cloudName) missingKeys.push("CLOUDINARY_NAME");
+  if (!apiKey) missingKeys.push("CLOUDINARY_API_KEY");
+  if (!apiSecret) missingKeys.push("CLOUDINARY_API_SECRET");
+
+  if (missingKeys.length > 0) {
+    res.json({
+      success: false,
+      message: `Variabel ${missingKeys.join(", ")} belum lengkap di Environment Variables (Vercel).`,
+      missingKeys,
+      config: {
+        cloudName: cloudName ? `${cloudName.substring(0, 3)}***` : "Belum diisi",
+        hasApiKey: Boolean(apiKey),
+        hasApiSecret: Boolean(apiSecret),
+      },
+    });
+    return;
+  }
+
+  try {
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const crypto = await import("crypto");
+    const signature = crypto.createHash("sha1").update(`timestamp=${timestamp}${apiSecret}`).digest("hex");
+    
+    // 1x1 transparent PNG data URI for quick connection ping
+    const testPixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    const formData = new URLSearchParams();
+    formData.append("file", testPixel);
+    formData.append("api_key", apiKey!);
+    formData.append("timestamp", String(timestamp));
+    formData.append("signature", signature);
+
+    const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const uploadData = await uploadRes.json();
+    if (uploadRes.ok && uploadData.secure_url) {
+      res.json({
+        success: true,
+        message: `Koneksi Cloudinary SUKSES! Gambar uji coba berhasil di-host di cloud "${cloudName}".`,
+        url: uploadData.secure_url,
+        cloudName,
+      });
+    } else {
+      res.json({
+        success: false,
+        message: uploadData?.error?.message || "Gagal mengunggah ke Cloudinary API.",
+        details: uploadData,
+      });
+    }
+  } catch (err: any) {
+    res.json({
+      success: false,
+      message: err.message || "Gagal terhubung ke Cloudinary.",
+    });
+  }
 });
 
 // System Integrations Status Endpoint
 app.get("/api/integrations/status", (req: Request, res: Response) => {
   const hasGemini = Boolean(process.env.GEMINI_API_KEY);
   const hasResend = Boolean(process.env.RESEND_API_KEY);
-  const hasCloudinary = Boolean(
-    process.env.CLOUDINARY_URL ||
-    ((process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME) && process.env.CLOUDINARY_API_KEY)
-  );
+  
+  let cloudName = process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME;
+  let apiKey = process.env.CLOUDINARY_API_KEY;
+  let apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudinaryUrl = process.env.CLOUDINARY_URL;
+
+  if (cloudinaryUrl) {
+    const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+    if (match) {
+      apiKey = apiKey || match[1];
+      apiSecret = apiSecret || match[2];
+      cloudName = cloudName || match[3];
+    }
+  }
+
+  const hasCloudinary = Boolean(cloudName && apiKey && apiSecret);
   const hasNeon = Boolean(process.env.DATABASE_URL);
 
   res.json({
@@ -3285,6 +3357,14 @@ app.get("/api/integrations/status", (req: Request, res: Response) => {
       cloudinary: {
         name: "Cloudinary Image Hosting",
         connected: hasCloudinary,
+        cloudName: cloudName || null,
+        hasApiKey: Boolean(apiKey),
+        hasApiSecret: Boolean(apiSecret),
+        missingKeys: [
+          !cloudName && "CLOUDINARY_NAME",
+          !apiKey && "CLOUDINARY_API_KEY",
+          !apiSecret && "CLOUDINARY_API_SECRET",
+        ].filter(Boolean),
         description: "Penyimpanan cloud media gambar produk & foto logo toko secara eksternal.",
       },
     },
