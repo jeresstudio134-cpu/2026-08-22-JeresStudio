@@ -41,6 +41,9 @@ export const orders = pgTable("orders", {
   diskon: integer("diskon").default(0).notNull(),
   total: integer("total").default(0).notNull(),
   created_by: varchar("created_by", { length: 100 }).default("admin"),
+  share_token: text("share_token").unique(),
+  share_expires_at: timestamp("share_expires_at"),
+  progress_notes: text("progress_notes"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -60,13 +63,27 @@ export const orderItems = pgTable("order_items", {
 export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
   nama_vendor: varchar("nama_vendor", { length: 150 }).notNull(),
-  kategori_supply: varchar("kategori_supply", { length: 100 }).notNull(), // 'Bahan Stiker' | 'Bahan DTF' | 'Tinta' | 'Kertas & Karton' | 'Jasa Cetak' | 'Lainnya'
+  kategori_supply: varchar("kategori_supply", { length: 100 }).default("Lainnya"), // 'Bahan Stiker' | 'Bahan DTF' | 'Tinta' | 'Kertas & Karton' | 'Jasa Cetak' | 'Lainnya'
+  kontak: text("kontak"), // nomor WA / telepon
   kontak_nama: varchar("kontak_nama", { length: 100 }),
-  no_wa: varchar("no_wa", { length: 50 }).notNull(),
+  no_wa: varchar("no_wa", { length: 50 }),
+  link: text("link"), // link website / catalog / marketplace vendor
   alamat: text("alamat"),
   catatan: text("catatan"),
   is_active: boolean("is_active").default(true).notNull(),
   created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const productVendors = pgTable("product_vendors", {
+  id: serial("id").primaryKey(),
+  product_id: integer("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  vendor_id: integer("vendor_id").references(() => vendors.id, { onDelete: "cascade" }).notNull(),
+  harga_modal: integer("harga_modal").notNull(),
+  is_default: boolean("is_default").default(false).notNull(),
+  catatan: text("catatan"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const purchaseHistory = pgTable("purchase_history", {
@@ -90,10 +107,27 @@ export const activityLogs = pgTable("activity_logs", {
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const guides = pgTable("guides", {
+  id: serial("id").primaryKey(),
+  category: varchar("category", { length: 100 }).default("Template Chat").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // 'masuk' | 'keluar'
+  created_at: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   tipe: varchar("tipe", { length: 20 }).notNull(), // 'masuk' | 'keluar'
-  kategori: varchar("kategori", { length: 100 }).notNull(),
+  kategori: varchar("kategori", { length: 100 }).notNull(), // snapshot nama kategori
+  kantong: varchar("kantong", { length: 50 }).default("margin").notNull(), // 'modal' | 'overhead' | 'gaji_saya' | 'gaji_karyawan' | 'margin'
   nominal: integer("nominal").notNull(),
   tanggal: timestamp("tanggal").defaultNow().notNull(),
   metode_pembayaran: varchar("metode_pembayaran", { length: 50 }).default("Cash").notNull(),
@@ -114,8 +148,26 @@ export const storeSettings = pgTable("store_settings", {
   logo_url: text("logo_url").default(""),
   rekening_bank: text("rekening_bank").default("BCA: 123-456-7890 a/n Jeres Studio\nMandiri: 987-654-3210 a/n Jeres Studio\nQRIS: Tersedia di Kasir"),
   catatan_nota: text("catatan_nota").default("1. Barang yang sudah dicetak sesuai ACC tidak dapat dikembalikan.\n2. Pembayaran lunas saat pengambilan barang.\n3. File disimpan maksimal 30 hari."),
+  margin_threshold_good: varchar("margin_threshold_good", { length: 10 }).default("20"),
+  margin_threshold_warning: varchar("margin_threshold_warning", { length: 10 }).default("10"),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const productsRelations = relations(products, ({ many }) => ({
+  vendors: many(productVendors),
+  orderItems: many(orderItems),
+}));
+
+export const productVendorsRelations = relations(productVendors, ({ one }) => ({
+  product: one(products, {
+    fields: [productVendors.product_id],
+    references: [products.id],
+  }),
+  vendor: one(vendors, {
+    fields: [productVendors.vendor_id],
+    references: [vendors.id],
+  }),
+}));
 
 export const ordersRelations = relations(orders, ({ many }) => ({
   items: many(orderItems),
@@ -134,6 +186,7 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
 
 export const vendorsRelations = relations(vendors, ({ many }) => ({
   purchases: many(purchaseHistory),
+  products: many(productVendors),
 }));
 
 export const purchaseHistoryRelations = relations(purchaseHistory, ({ one }) => ({

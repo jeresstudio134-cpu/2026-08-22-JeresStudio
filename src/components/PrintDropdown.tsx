@@ -1,334 +1,348 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Order, StoreSettings } from "../types/index.js";
-import { DocumentType } from "./print/PrintDocumentRenderer.js";
-import { downloadDocPdf } from "../lib/generateInvoicePdf.js";
+import {
+  generateInvoicePDF,
+  generateSuratJalanPDF,
+  generateTandaTerimaPDF,
+  exportInvoiceToXLS,
+  exportInvoiceToCSV,
+  getUserPaperPreference,
+} from "../utils/generateInvoicePDF.js";
+import { ChangePaperLayoutModal } from "./ChangePaperLayoutModal.js";
 import {
   Printer,
   ChevronDown,
   FileText,
   Truck,
+  CheckSquare,
+  FileSpreadsheet,
+  FileCode,
+  Sliders,
   Tag,
-  CreditCard,
-  Download,
-  ExternalLink,
+  Stamp,
+  Receipt,
+  FileCheck,
+  File,
   Loader2,
 } from "lucide-react";
 
 interface PrintDropdownProps {
   order: Order;
-  settings: StoreSettings | null;
-  variant?: "button" | "compact" | "table";
+  settings?: StoreSettings | null;
+  variant?: "primary" | "table" | "icon" | "button";
   className?: string;
-  onOpenPrintPage?: (docType: DocumentType, order: Order) => void;
+  onLayoutChange?: () => void;
 }
 
-export function PrintDropdown({
+export const PrintDropdown: React.FC<PrintDropdownProps> = ({
   order,
   settings,
-  variant = "button",
+  variant = "primary",
   className = "",
-  onOpenPrintPage,
-}: PrintDropdownProps) {
+  onLayoutChange,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [downloadingType, setDownloadingType] = useState<DocumentType | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState<{
-    top: number;
-    left?: number;
-    right?: number;
-    isUp: boolean;
-  }>({
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [layoutModalOpen, setLayoutModalOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; right?: number }>({
     top: 0,
-    isUp: false,
+    left: 0,
   });
 
-  // Calculate coordinates & auto-detect dropup vs dropdown
-  const updatePosition = () => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const estimatedMenuHeight = 225;
-    const menuWidth = 250;
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const isUp = spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight;
+  // Close dropdown on outside click or scroll
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(e.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
 
-    let top = isUp ? rect.top - estimatedMenuHeight - 6 : rect.bottom + 6;
-    if (top < 10) top = 10;
+    const handleScroll = (e: Event) => {
+      if (isOpen && menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
 
-    // Align with right edge of trigger button
-    let right = window.innerWidth - rect.right;
-    if (right < 10) right = 10;
-    if (rect.right - menuWidth < 10) {
-      // If menu extends beyond left screen edge, position from left
-      setMenuPos({
-        top,
-        left: 10,
-        isUp,
-      });
-    } else {
-      setMenuPos({
-        top,
-        right,
-        isUp,
-      });
+    if (isOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      window.addEventListener("scroll", handleScroll, true);
     }
-  };
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [isOpen]);
 
-  // Toggle & compute position
-  const handleToggle = (e: React.MouseEvent) => {
+  const toggleDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isOpen) {
-      updatePosition();
+    e.preventDefault();
+
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const menuWidth = 230;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+
+      // Prefer aligning with right edge of button if close to right edge of viewport
+      let leftPos = rect.right - menuWidth;
+      if (leftPos < 12) {
+        leftPos = Math.max(12, rect.left);
+      }
+      if (leftPos + menuWidth > window.innerWidth - 12) {
+        leftPos = window.innerWidth - menuWidth - 12;
+      }
+
+      // Determine top or bottom alignment based on available vertical space
+      let topPos: number;
+      if (spaceBelow < 320 && spaceAbove > spaceBelow) {
+        // Position above the button
+        topPos = Math.max(12, rect.top - 310);
+      } else {
+        // Position below the button
+        topPos = Math.min(window.innerHeight - 320, rect.bottom + 4);
+        if (topPos < 12) topPos = 12;
+      }
+
+      setMenuPosition({
+        top: topPos,
+        left: Math.max(10, leftPos),
+      });
     }
     setIsOpen(!isOpen);
   };
 
-  // Recalculate on window resize / scroll
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleScrollOrResize = () => {
-      updatePosition();
-    };
-
-    window.addEventListener("resize", handleScrollOrResize);
-    window.addEventListener("scroll", handleScrollOrResize, true);
-
-    return () => {
-      window.removeEventListener("resize", handleScrollOrResize);
-      window.removeEventListener("scroll", handleScrollOrResize, true);
-    };
-  }, [isOpen]);
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        triggerRef.current &&
-        !triggerRef.current.contains(target) &&
-        menuRef.current &&
-        !menuRef.current.contains(target)
-      ) {
-        setIsOpen(false);
-      }
-    }
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
-
-  // Handler buka halaman print terpisah
-  const handleOpenPrint = (docType: DocumentType) => {
-    setIsOpen(false);
-    if (onOpenPrintPage) {
-      onOpenPrintPage(docType, order);
-      return;
-    }
-
-    // Default: Buka route /print/:docType/:orderId di tab baru
-    const printUrl = `/print/${docType}/${order.id}`;
-    window.open(printUrl, "_blank");
-  };
-
-  // Handler download PDF instan via jsPDF + html2canvas
-  const handleDownloadPdf = async (e: React.MouseEvent, docType: DocumentType) => {
-    e.stopPropagation();
+  const handleAction = async (actionType: string) => {
     try {
-      setDownloadingType(docType);
-      await downloadDocPdf(docType, order, settings);
-    } catch (err) {
-      console.error("Gagal mendownload PDF:", err);
+      setLoadingAction(actionType);
+      if (actionType === "faktur") {
+        await generateInvoicePDF(order, settings, { action: "open" });
+      } else if (actionType === "surat_jalan") {
+        await generateSuratJalanPDF(order, settings, { action: "open" });
+      } else if (actionType === "tanda_terima") {
+        await generateTandaTerimaPDF(order, settings, { action: "open" });
+      } else if (actionType === "xls") {
+        exportInvoiceToXLS(order, settings);
+      } else if (actionType === "csv") {
+        exportInvoiceToCSV(order, settings);
+      } else if (actionType === "layout") {
+        setLayoutModalOpen(true);
+      }
+    } catch (err: any) {
+      console.error(`Gagal memproses aksi ${actionType}:`, err);
+      alert(`Gagal: ${err?.message || "Terjadi kesalahan saat memproses dokumen."}`);
     } finally {
-      setDownloadingType(null);
+      setLoadingAction(null);
       setIsOpen(false);
     }
   };
 
-  const getDocIcon = (type: DocumentType) => {
-    switch (type) {
-      case "surat-jalan":
-        return <Truck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />;
-      case "label":
-        return <Tag className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />;
-      case "rekap-pembayaran":
-        return <CreditCard className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />;
-      case "nota":
-      default:
-        return <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />;
-    }
-  };
+  const currentPaper = getUserPaperPreference();
 
-  const menuItems: { type: DocumentType; label: string; paperSize: string }[] = [
-    {
-      type: "nota",
-      label: "Nota / Invoice",
-      paperSize: "A6 Landscape",
-    },
-    {
-      type: "surat-jalan",
-      label: "Surat Jalan",
-      paperSize: "A5 Portrait",
-    },
-    {
-      type: "label",
-      label: "Label Pengiriman",
-      paperSize: "10 x 15 cm",
-    },
-    {
-      type: "rekap-pembayaran",
-      label: "Rekap Pembayaran",
-      paperSize: "A6 Landscape",
-    },
-  ];
-
-  return (
-    <div className={`relative inline-block text-left ${className}`}>
-      {/* Trigger Button Variants */}
-      {variant === "table" ? (
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={handleToggle}
-          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-lg transition-all border cursor-pointer select-none ${
-            isOpen
-              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-              : "text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border-indigo-200 dark:border-indigo-800"
-          }`}
-          title="Pilih Dokumen Cetak"
-        >
-          <Printer className="w-3.5 h-3.5" />
-          <span>Cetak</span>
-          <ChevronDown
-            className={`w-3 h-3 transition-transform duration-200 ${
-              isOpen ? (menuPos.isUp ? "rotate-0" : "rotate-180") : ""
-            }`}
-          />
-        </button>
-      ) : variant === "compact" ? (
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={handleToggle}
-          className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer shrink-0 flex items-center gap-1 select-none"
-          title="Cetak Dokumen"
-        >
-          <Printer className="w-3.5 h-3.5" />
-          <ChevronDown className="w-2.5 h-2.5 opacity-70" />
-        </button>
-      ) : (
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={handleToggle}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-xs select-none ${
-            isOpen
-              ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
-              : "text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-200 dark:border-indigo-800"
-          }`}
-        >
-          <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-          <span>Cetak</span>
-          <ChevronDown
-            className={`w-3 h-3 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${
-              isOpen ? "rotate-180 text-white" : ""
-            }`}
-          />
-        </button>
-      )}
-
-      {/* Render via Portal directly to body to avoid ANY overflow-hidden clipping */}
-      {isOpen &&
-        createPortal(
+  // Dropdown portal menu
+  const menuPortal =
+    isOpen && typeof document !== "undefined"
+      ? createPortal(
           <div
             ref={menuRef}
             style={{
               position: "fixed",
-              top: `${menuPos.top}px`,
-              ...(menuPos.left !== undefined ? { left: `${menuPos.left}px` } : {}),
-              ...(menuPos.right !== undefined ? { right: `${menuPos.right}px` } : {}),
-              width: "250px",
-              zIndex: 99999,
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+              zIndex: 9999,
+              maxHeight: "calc(100vh - 24px)",
             }}
-            className={`rounded-xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 py-1.5 focus:outline-none divide-y divide-slate-100 dark:divide-slate-800 transition-all duration-150 animate-in fade-in ${
-              menuPos.isUp ? "slide-in-from-bottom-2 origin-bottom-right" : "slide-in-from-top-2 origin-top-right"
-            }`}
+            className="w-56 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1 overflow-y-auto animate-in fade-in-50 zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Header info */}
-            <div className="px-3 py-2 bg-slate-50/80 dark:bg-slate-800/60">
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider">
-                Pilih Dokumen Cetak
-              </p>
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                Nota: {order.nomor_nota}
-              </p>
+            {/* Section 1: Dokumen Utama */}
+            <div className="px-2.5 py-1 text-[9.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Dokumen Cetak
             </div>
 
-            {/* List options */}
-            <div className="py-1">
-              {menuItems.map((item) => {
-                const isItemDownloading = downloadingType === item.type;
+            <button
+              type="button"
+              onClick={() => handleAction("faktur")}
+              className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Faktur</span>
+              </div>
+              {loadingAction === "faktur" && <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />}
+            </button>
 
-                return (
-                  <div
-                    key={item.type}
-                    className="group flex items-center justify-between px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors cursor-pointer"
-                    onClick={() => handleOpenPrint(item.type)}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                      {getDocIcon(item.type)}
-                      <div className="text-left truncate">
-                        <p className="font-semibold leading-snug truncate text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-300">
-                          {item.label}
-                        </p>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-400 font-mono">
-                          {item.paperSize}
-                        </span>
-                      </div>
-                    </div>
+            <button
+              type="button"
+              onClick={() => handleAction("surat_jalan")}
+              className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Truck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Surat Jalan</span>
+              </div>
+              {loadingAction === "surat_jalan" && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+            </button>
 
-                    {/* Actions: Tab Baru Print / Download PDF */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      {/* Quick Download PDF Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleDownloadPdf(e, item.type)}
-                        disabled={isItemDownloading}
-                        className="p-1 rounded-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all cursor-pointer"
-                        title={`Download PDF ${item.label}`}
-                      >
-                        {isItemDownloading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                        ) : (
-                          <Download className="w-3.5 h-3.5" />
-                        )}
-                      </button>
+            <button
+              type="button"
+              onClick={() => handleAction("tanda_terima")}
+              className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                <span>Tanda Terima Dokumen</span>
+              </div>
+              {loadingAction === "tanda_terima" && <Loader2 className="w-3 h-3 animate-spin text-sky-600" />}
+            </button>
 
-                      {/* Open Print Tab Indicator */}
-                      <span className="p-1 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 transition-colors">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+            {/* Section 2: Export Data */}
+            <div className="px-2.5 py-1 text-[9.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Export Data
             </div>
 
-            {/* Footer note */}
-            <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/40 text-[10px] text-slate-400 dark:text-slate-400 flex items-center justify-between">
-              <span>Klik: Buka Tab Print</span>
-              <span className="flex items-center gap-1 font-mono">
-                <Download className="w-2.5 h-2.5" /> Unduh PDF
+            <button
+              type="button"
+              onClick={() => handleAction("xls")}
+              className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-400 flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Download XLS (Excel)</span>
+              </div>
+              {loadingAction === "xls" && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAction("csv")}
+              className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-400 flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <FileCode className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Download CSV</span>
+              </div>
+              {loadingAction === "csv" && <Loader2 className="w-3 h-3 animate-spin text-amber-600" />}
+            </button>
+
+            <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+            {/* Section 3: Konfigurasi Layout */}
+            <button
+              type="button"
+              onClick={() => handleAction("layout")}
+              className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Ganti Layout</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/60 font-mono font-bold">
+                {currentPaper}
               </span>
-            </div>
+            </button>
           </div>,
           document.body
-        )}
-    </div>
+        )
+      : null;
+
+  if (variant === "table") {
+    return (
+      <>
+        <div className={`inline-flex items-center shrink-0 ${className}`}>
+          <button
+            ref={buttonRef}
+            type="button"
+            onClick={toggleDropdown}
+            className="inline-flex items-center gap-1 px-1.5 py-1 text-[10.5px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-md border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer shrink-0"
+            title="Menu Print & Dokumen"
+          >
+            {loadingAction ? (
+              <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+            ) : (
+              <Printer className="w-3 h-3" />
+            )}
+            <span>Print</span>
+            <ChevronDown className={`w-2.5 h-2.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+        {menuPortal}
+        <ChangePaperLayoutModal
+          isOpen={layoutModalOpen}
+          onClose={() => setLayoutModalOpen(false)}
+          onLayoutChanged={() => {
+            if (onLayoutChange) onLayoutChange();
+          }}
+        />
+      </>
+    );
+  }
+
+  if (variant === "icon") {
+    return (
+      <>
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleDropdown}
+          className={`p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer ${className}`}
+          title="Menu Print Dokumen"
+        >
+          {loadingAction ? (
+            <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+          ) : (
+            <Printer className="w-4 h-4" />
+          )}
+        </button>
+        {menuPortal}
+        <ChangePaperLayoutModal
+          isOpen={layoutModalOpen}
+          onClose={() => setLayoutModalOpen(false)}
+          onLayoutChanged={() => {
+            if (onLayoutChange) onLayoutChange();
+          }}
+        />
+      </>
+    );
+  }
+
+  // Variant: primary / button
+  return (
+    <>
+      <div className={`inline-flex items-center ${className}`}>
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleDropdown}
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-xs transition-all cursor-pointer"
+        >
+          {loadingAction ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Printer className="w-4 h-4" />
+          )}
+          <span>Print</span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+      {menuPortal}
+      <ChangePaperLayoutModal
+        isOpen={layoutModalOpen}
+        onClose={() => setLayoutModalOpen(false)}
+        onLayoutChanged={() => {
+          if (onLayoutChange) onLayoutChange();
+        }}
+      />
+    </>
   );
-}
+};

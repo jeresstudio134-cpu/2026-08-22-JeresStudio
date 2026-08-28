@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -26,22 +26,107 @@ import {
   Receipt,
   ChevronDown,
   ChevronUp,
+  Settings,
+  SlidersHorizontal,
+  ShieldCheck,
+  Zap,
+  UserCheck,
+  Users,
+  Layers,
+  Info,
+  AlertTriangle,
+  Coins,
 } from "lucide-react";
 import { api } from "../../lib/api.js";
-import { Transaction, FinancialSummary, StoreSettings } from "../../types/index.js";
+import {
+  Transaction,
+  FinancialSummary,
+  StoreSettings,
+  TransactionCategory,
+  KantongKasType,
+  KantongBalances,
+  HppBreakdown,
+} from "../../types/index.js";
 import { formatRupiah, formatTanggal } from "../../lib/utils.js";
 import { useAuth } from "../../lib/auth.js";
 import { ReceiptScannerModal } from "../../components/ReceiptScannerModal.js";
+import { CategoryManagerModal } from "../../components/CategoryManagerModal.js";
 
 interface AdminFinanceProps {
   settings?: StoreSettings | null;
 }
+
+const KANTONG_CONFIG: Record<
+  KantongKasType,
+  {
+    label: string;
+    shortLabel: string;
+    description: string;
+    color: string;
+    badgeBg: string;
+    badgeText: string;
+    border: string;
+    icon: React.ElementType;
+  }
+> = {
+  modal: {
+    label: "Kantong Modal (Vendor & Bahan)",
+    shortLabel: "Modal",
+    description: "Biaya bahan baku, tinta, kertas, & vendor pihak ketiga",
+    color: "blue",
+    badgeBg: "bg-blue-50 dark:bg-blue-950/60",
+    badgeText: "text-blue-700 dark:text-blue-300",
+    border: "border-blue-200 dark:border-blue-800",
+    icon: ShieldCheck,
+  },
+  overhead: {
+    label: "Kantong Overhead (Operasional)",
+    shortLabel: "Overhead",
+    description: "Listrik, WiFi, sewa toko, maintenance, & ATK",
+    color: "amber",
+    badgeBg: "bg-amber-50 dark:bg-amber-950/60",
+    badgeText: "text-amber-700 dark:text-amber-300",
+    border: "border-amber-200 dark:border-amber-800",
+    icon: Zap,
+  },
+  gaji_saya: {
+    label: "Kantong Gaji Saya (Owner / Desain)",
+    shortLabel: "Gaji Saya",
+    description: "Honor jasa desain dan porsi pemilik bisnis",
+    color: "purple",
+    badgeBg: "bg-purple-50 dark:bg-purple-950/60",
+    badgeText: "text-purple-700 dark:text-purple-300",
+    border: "border-purple-200 dark:border-purple-800",
+    icon: UserCheck,
+  },
+  gaji_karyawan: {
+    label: "Kantong Gaji Karyawan (Operator)",
+    shortLabel: "Gaji Karyawan",
+    description: "Upah setting, finishing, & staff operasional",
+    color: "teal",
+    badgeBg: "bg-teal-50 dark:bg-teal-950/60",
+    badgeText: "text-teal-700 dark:text-teal-300",
+    border: "border-teal-200 dark:border-teal-800",
+    icon: Users,
+  },
+  margin: {
+    label: "Kantong Margin / Profit Toko",
+    shortLabel: "Margin",
+    description: "Keuntungan bersih toko & cadangan kas ekspansi",
+    color: "emerald",
+    badgeBg: "bg-emerald-50 dark:bg-emerald-950/60",
+    badgeText: "text-emerald-700 dark:text-emerald-300",
+    border: "border-emerald-200 dark:border-emerald-800",
+    icon: TrendingUp,
+  },
+};
 
 export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   const { user } = useAuth();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
+  const [allCategories, setAllCategories] = useState<TransactionCategory[]>([]);
   const [incomeCategories, setIncomeCategories] = useState<string[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +135,14 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   // Scanner Modal State
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
 
+  // Category Manager Modal State
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+
+  // Allocation Rules Collapsible State
+  const [showAllocationRules, setShowAllocationRules] = useState(false);
+
   // Filters
+  const [kantongFilter, setKantongFilter] = useState<string>("all"); // 'all' | KantongKasType
   const [typeFilter, setTypeFilter] = useState<string>("all"); // 'all' | 'masuk' | 'keluar'
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [methodFilter, setMethodFilter] = useState<string>("all");
@@ -62,13 +154,15 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"standard" | "auto_allocate">("standard");
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  // Form State
+  // Standard Form State
   const [formType, setFormType] = useState<"masuk" | "keluar">("masuk");
+  const [formKantong, setFormKantong] = useState<KantongKasType>("margin");
   const [formCategory, setFormCategory] = useState("");
   const [customCategoryInput, setCustomCategoryInput] = useState("");
   const [formAmount, setFormAmount] = useState("");
@@ -76,6 +170,19 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   const [formMethod, setFormMethod] = useState("Cash");
   const [formDescription, setFormDescription] = useState("");
   const [formReference, setFormReference] = useState("");
+
+  // Auto Allocate Form State (5 Kantong HPP Splitting)
+  const [allocOrderRef, setAllocOrderRef] = useState("");
+  const [allocCustomer, setAllocCustomer] = useState("");
+  const [allocModal, setAllocModal] = useState("");
+  const [allocOverhead, setAllocOverhead] = useState("");
+  const [allocGajiSaya, setAllocGajiSaya] = useState("");
+  const [allocGajiKaryawan, setAllocGajiKaryawan] = useState("");
+  const [allocMargin, setAllocMargin] = useState("");
+  const [allocDiskon, setAllocDiskon] = useState("");
+  const [allocMethod, setAllocMethod] = useState("Cash");
+  const [allocDate, setAllocDate] = useState(new Date().toISOString().slice(0, 10));
+  const [allocDesc, setAllocDesc] = useState("");
 
   // Delete Confirmation Modal
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -125,18 +232,20 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       const [txRes, sumRes, catRes] = await Promise.all([
         api.getTransactions({
           tipe: typeFilter !== "all" ? typeFilter : undefined,
+          kantong: kantongFilter !== "all" ? kantongFilter : undefined,
           kategori: categoryFilter !== "all" ? categoryFilter : undefined,
           metode: methodFilter !== "all" ? methodFilter : undefined,
           startDate: start || undefined,
           endDate: end || undefined,
           search: searchQuery.trim() || undefined,
         }),
-        api.getTransactionSummary(),
-        api.getTransactionCategories(),
+        api.getTransactionSummary(kantongFilter !== "all" ? kantongFilter : undefined),
+        api.getCategories(),
       ]);
 
       setTransactions(txRes.transactions || []);
       setSummary(sumRes.summary || null);
+      setAllCategories(catRes.categories || []);
       setIncomeCategories(catRes.incomeCategories || []);
       setExpenseCategories(catRes.expenseCategories || []);
     } catch (err: any) {
@@ -149,13 +258,25 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
   useEffect(() => {
     loadFinanceData();
-  }, [typeFilter, categoryFilter, methodFilter, dateRangeFilter, customStartDate, customEndDate, searchQuery]);
+  }, [
+    kantongFilter,
+    typeFilter,
+    categoryFilter,
+    methodFilter,
+    dateRangeFilter,
+    customStartDate,
+    customEndDate,
+    searchQuery,
+  ]);
 
-  // Open Create Modal
+  // Open Standard Create Modal
   const handleOpenCreateModal = (defaultType: "masuk" | "keluar") => {
     setEditingTransaction(null);
+    setModalMode("standard");
     setFormType(defaultType);
-    const defaultCat = defaultType === "masuk" ? incomeCategories[0] || "Penjualan Order Cetak" : expenseCategories[0] || "Kulakan Bahan Baku";
+    setFormKantong(defaultType === "masuk" ? "margin" : "modal");
+    const available = defaultType === "masuk" ? incomeCategories : expenseCategories;
+    const defaultCat = available.length > 0 ? available[0] : "__custom__";
     setFormCategory(defaultCat);
     setCustomCategoryInput("");
     setFormAmount("");
@@ -167,10 +288,32 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     setModalOpen(true);
   };
 
+  // Open Auto Allocate Modal (5 Kantong HPP)
+  const handleOpenAutoAllocateModal = () => {
+    setEditingTransaction(null);
+    setModalMode("auto_allocate");
+    setFormType("masuk");
+    setAllocOrderRef("");
+    setAllocCustomer("");
+    setAllocModal("");
+    setAllocOverhead("");
+    setAllocGajiSaya("");
+    setAllocGajiKaryawan("");
+    setAllocMargin("");
+    setAllocDiskon("");
+    setAllocMethod("Cash");
+    setAllocDate(new Date().toISOString().slice(0, 10));
+    setAllocDesc("Alokasi kas order cetak sesuai HPP");
+    setErrorMessage("");
+    setModalOpen(true);
+  };
+
   // Open Edit Modal
   const handleOpenEditModal = (tx: Transaction) => {
     setEditingTransaction(tx);
+    setModalMode("standard");
     setFormType(tx.tipe);
+    setFormKantong(tx.kantong || (tx.tipe === "masuk" ? "margin" : "modal"));
     setFormCategory(tx.kategori);
     setCustomCategoryInput("");
     setFormAmount(tx.nominal.toString());
@@ -182,8 +325,79 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     setModalOpen(true);
   };
 
-  // Save Transaction (Create / Update)
-  const handleSaveTransaction = async (e: React.FormEvent) => {
+  // Live Auto Allocation Calculation Preview
+  const allocationPreview = useMemo(() => {
+    const rawModal = Number(allocModal.replace(/\D/g, "")) || 0;
+    const rawOverhead = Number(allocOverhead.replace(/\D/g, "")) || 0;
+    const rawGajiSaya = Number(allocGajiSaya.replace(/\D/g, "")) || 0;
+    const rawGajiKaryawan = Number(allocGajiKaryawan.replace(/\D/g, "")) || 0;
+    const rawMargin = Number(allocMargin.replace(/\D/g, "")) || 0;
+    const diskon = Number(allocDiskon.replace(/\D/g, "")) || 0;
+
+    const subtotal = rawModal + rawOverhead + rawGajiSaya + rawGajiKaryawan + rawMargin;
+    const totalDiterima = Math.max(0, subtotal - diskon);
+
+    let sisaDiskon = diskon;
+
+    // 1. Margin
+    const potonganMargin = Math.min(rawMargin, sisaDiskon);
+    const alokasiMargin = rawMargin - potonganMargin;
+    sisaDiskon -= potonganMargin;
+
+    // 2. Gaji Saya
+    const potonganGajiSaya = Math.min(rawGajiSaya, sisaDiskon);
+    const alokasiGajiSaya = rawGajiSaya - potonganGajiSaya;
+    sisaDiskon -= potonganGajiSaya;
+
+    // 3. Overhead
+    const potonganOverhead = Math.min(rawOverhead, sisaDiskon);
+    const alokasiOverhead = rawOverhead - potonganOverhead;
+    sisaDiskon -= potonganOverhead;
+
+    // 4. Gaji Karyawan
+    const potonganGajiKaryawan = Math.min(rawGajiKaryawan, sisaDiskon);
+    const alokasiGajiKaryawan = rawGajiKaryawan - potonganGajiKaryawan;
+    sisaDiskon -= potonganGajiKaryawan;
+
+    // 5. Modal Vendor (Protected, only reduced if discount overflows all 4 pockets)
+    const potonganModal = Math.min(rawModal, sisaDiskon);
+    const alokasiModal = rawModal - potonganModal;
+    sisaDiskon -= potonganModal;
+
+    const exceedsNonModal = potonganModal > 0;
+
+    return {
+      subtotal,
+      diskon,
+      totalDiterima,
+      rawBreakdown: {
+        modal: rawModal,
+        overhead: rawOverhead,
+        gajiSaya: rawGajiSaya,
+        gajiKaryawan: rawGajiKaryawan,
+        margin: rawMargin,
+      },
+      alokasi: {
+        modal: alokasiModal,
+        overhead: alokasiOverhead,
+        gajiSaya: alokasiGajiSaya,
+        gajiKaryawan: alokasiGajiKaryawan,
+        margin: alokasiMargin,
+      },
+      potongan: {
+        margin: potonganMargin,
+        gajiSaya: potonganGajiSaya,
+        overhead: potonganOverhead,
+        gajiKaryawan: potonganGajiKaryawan,
+        modal: potonganModal,
+      },
+      sisaDiskonTidakTertutup: sisaDiskon,
+      exceedsNonModal,
+    };
+  }, [allocModal, allocOverhead, allocGajiSaya, allocGajiKaryawan, allocMargin, allocDiskon]);
+
+  // Save Standard Transaction
+  const handleSaveStandardTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
 
@@ -208,6 +422,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       setSubmitting(true);
       const payload = {
         tipe: formType,
+        kantong: formKantong,
         kategori: finalCategory,
         nominal: parsedNominal,
         tanggal: formDate,
@@ -221,7 +436,11 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         setSuccessMessage("Transaksi kas berhasil diperbarui!");
       } else {
         await api.createTransaction(payload);
-        setSuccessMessage(`Transaksi ${formType === "masuk" ? "pemasukan" : "pengeluaran"} berhasil dicatat!`);
+        setSuccessMessage(
+          `Transaksi ${formType === "masuk" ? "pemasukan" : "pengeluaran"} berhasil dicatat ke Kantong ${
+            KANTONG_CONFIG[formKantong]?.shortLabel || formKantong
+          }!`
+        );
       }
 
       setModalOpen(false);
@@ -229,6 +448,47 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       setTimeout(() => setSuccessMessage(""), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || "Gagal menyimpan transaksi.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Save Auto Allocated Order (5 Kantong)
+  const handleSaveAutoAllocateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage("");
+
+    if (allocationPreview.subtotal <= 0) {
+      setErrorMessage("Total HPP + Margin produk harus lebih dari 0.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const res = await api.autoAllocateOrder({
+        nomor_nota: allocOrderRef || undefined,
+        customer_name: allocCustomer || undefined,
+        diskon: allocationPreview.diskon,
+        breakdownHPP: allocationPreview.rawBreakdown,
+        metode_pembayaran: allocMethod,
+        tanggal: allocDate,
+        keterangan: allocDesc.trim() || "Alokasi kas order cetak sesuai HPP",
+      });
+
+      if (res.potonganModal > 0) {
+        setSuccessMessage(
+          `Order berhasil dialokasikan! Peringatan: Modal terpotong Rp ${formatRupiah(res.potonganModal)}.`
+        );
+      } else {
+        setSuccessMessage("Order berhasil dialokasikan secara otomatis ke 5 kantong kas!");
+      }
+
+      setModalOpen(false);
+      await loadFinanceData();
+      setTimeout(() => setSuccessMessage(""), 5000);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Gagal mengalokasikan kas order.");
     } finally {
       setSubmitting(false);
     }
@@ -258,10 +518,22 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       return;
     }
 
-    const headers = ["ID", "Tipe", "Kategori", "Nominal (Rp)", "Tanggal", "Metode Pembayaran", "Keterangan", "Referensi", "Dicatat Oleh"];
+    const headers = [
+      "ID",
+      "Tipe",
+      "Kantong Kas",
+      "Kategori",
+      "Nominal (Rp)",
+      "Tanggal",
+      "Metode Pembayaran",
+      "Keterangan",
+      "Referensi",
+      "Dicatat Oleh",
+    ];
     const rows = transactions.map((t) => [
       t.id,
       t.tipe === "masuk" ? "PEMASUKAN" : "PENGELUARAN",
+      `"${KANTONG_CONFIG[t.kantong as KantongKasType]?.shortLabel || t.kantong || "General"}"`,
       `"${t.kategori.replace(/"/g, '""')}"`,
       t.nominal,
       `"${new Date(t.tanggal).toLocaleString("id-ID")}"`,
@@ -275,7 +547,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `laporan-kas-jeres-studio-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `laporan-kas-5-kantong-jeres-studio-${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -284,10 +556,8 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   // Available categories based on modal form type
   const availableFormCategories = formType === "masuk" ? incomeCategories : expenseCategories;
 
-  // Filtered transactions for display (including kasir filter)
-  const uniqueKasirs = Array.from(
-    new Set(transactions.map((t) => t.created_by || "Admin").filter(Boolean))
-  );
+  // Filtered transactions for display
+  const uniqueKasirs = Array.from(new Set(transactions.map((t) => t.created_by || "Admin").filter(Boolean)));
 
   const displayedTransactions = transactions.filter((tx) => {
     if (kasirFilter !== "all" && (tx.created_by || "Admin") !== kasirFilter) {
@@ -296,21 +566,66 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     return true;
   });
 
+  const balances: KantongBalances = summary?.kantongBalances || {
+    modal: { saldo: 0, masuk: 0, keluar: 0 },
+    overhead: { saldo: 0, masuk: 0, keluar: 0 },
+    gaji_saya: { saldo: 0, masuk: 0, keluar: 0 },
+    gaji_karyawan: { saldo: 0, masuk: 0, keluar: 0 },
+    margin: { saldo: 0, masuk: 0, keluar: 0 },
+  };
+
+  const currentSelectedPocketBalance = balances[formKantong]?.saldo ?? 0;
+  const isSelectedExpenseExceeding =
+    formType === "keluar" &&
+    Number(formAmount.replace(/\D/g, "")) > 0 &&
+    Number(formAmount.replace(/\D/g, "")) > currentSelectedPocketBalance;
+
   return (
     <div className="space-y-4">
       {/* Top Header & Fast Action Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            Manajemen Keuangan Kas
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Pencatatan kas masuk & keluar, omzet cetak, pengeluaran operasional, dan monitoring saldo Jeres Studio
-          </p>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+              <Coins className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                Sistem Kas 5 Kantong
+                <span className="text-[10px] uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                  Proteksi Modal
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Pemisahan otomatis dana modal vendor, operasional, gaji owner, upah karyawan, dan laba bersih
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowAllocationRules(!showAllocationRules)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border shadow-xs cursor-pointer transition-colors ${
+              showAllocationRules
+                ? "bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700"
+                : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100"
+            }`}
+            title="Lihat Aturan Alokasi Kas & Hierarki Diskon"
+          >
+            <Info className="w-3.5 h-3.5" />
+            Aturan Kas
+          </button>
+
+          <button
+            onClick={() => setCategoryModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 shadow-xs cursor-pointer transition-colors"
+            title="Kelola & Edit Kategori Kas Masuk / Keluar"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Kategori
+          </button>
+
           <button
             onClick={loadFinanceData}
             disabled={refreshing}
@@ -343,122 +658,230 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
       {/* Success Notification Alert */}
       {successMessage && (
-        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 rounded-xl flex items-center gap-2">
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 rounded-xl flex items-center gap-2 shadow-xs">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
 
-      {/* TWO-COLUMN LAYOUT: Desktop/Tablet (>=768px/1024px) 2 columns, Mobile (<768px) 1 column */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        
-        {/* LEFT COLUMN: 2x2 Summary Cards, Quick Action Buttons, AI Scanner, Category Breakdown */}
-        <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
-          {/* 2x2 Summary Cards Grid */}
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* Card 1: Saldo Kas Bersih */}
-            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className="text-[11px] font-semibold text-slate-500 truncate">Saldo Bersih</span>
-                <div className={`w-7 h-7 rounded-lg shrink-0 flex items-center justify-center ${
-                  (summary?.saldoBersih || 0) >= 0
-                    ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400"
-                    : "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400"
-                }`}>
-                  <Wallet className="w-3.5 h-3.5" />
-                </div>
-              </div>
-              <div>
-                <div className={`text-base sm:text-lg font-black font-mono tracking-tight leading-tight ${
-                  (summary?.saldoBersih || 0) >= 0 ? "text-slate-900 dark:text-white" : "text-rose-600"
-                }`}>
-                  {formatRupiah(summary?.saldoBersih || 0)}
-                </div>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1 truncate">
-                  <span>Bulan ini:</span>
-                  <span className={`font-mono font-bold ${(summary?.saldoBulanIni || 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                    {formatRupiah(summary?.saldoBulanIni || 0)}
-                  </span>
-                </div>
-              </div>
+      {/* Collapsible: Aturan Alokasi Kas & Proteksi Modal */}
+      {showAllocationRules && (
+        <div className="p-4 bg-gradient-to-r from-amber-50/90 via-orange-50/60 to-amber-50/90 dark:from-amber-950/40 dark:via-slate-900 dark:to-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-2xl space-y-3 shadow-xs">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              Aturan Alokasi Kas 5 Kantong & Proteksi Modal
+            </h4>
+            <button
+              onClick={() => setShowAllocationRules(false)}
+              className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer"
+            >
+              Tutup Panduan ✕
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-amber-950 dark:text-amber-200/90">
+            <div className="space-y-1.5 bg-white/70 dark:bg-slate-900/60 p-3 rounded-xl border border-amber-200/70 dark:border-amber-900/50">
+              <p className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                <span>🛡️ Prinsip Utama: Modal Vendor Terproteksi</span>
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+                Kantong modal adalah uang milik vendor & stok bahan baku. Ketika toko memberikan diskon pesanan,
+                dana modal <strong>TIDAK BOLEH dikorbankan</strong> agar toko tidak tekor kulakan.
+              </p>
             </div>
 
-            {/* Card 2: Total Pemasukan */}
-            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className="text-[11px] font-semibold text-slate-500 truncate">Total Pemasukan</span>
-                <div className="w-7 h-7 rounded-lg shrink-0 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                  <ArrowDownLeft className="w-3.5 h-3.5" />
+            <div className="space-y-1.5 bg-white/70 dark:bg-slate-900/60 p-3 rounded-xl border border-amber-200/70 dark:border-amber-900/50">
+              <p className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                <span>📉 Hierarki Pemotongan Diskon (Otomatis)</span>
+              </p>
+              <div className="text-[11px] space-y-1 text-slate-700 dark:text-slate-300">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-amber-700">1.</span>
+                  <span><strong>Margin Toko:</strong> dipotong pertama hingga habis</span>
                 </div>
-              </div>
-              <div>
-                <div className="text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight leading-tight">
-                  +{formatRupiah(summary?.totalPemasukan || 0)}
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-amber-700">2.</span>
+                  <span><strong>Gaji Saya:</strong> dipotong kedua jika diskon belum tertutup</span>
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1 truncate">
-                  <span>Bulan ini:</span>
-                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                    +{formatRupiah(summary?.pemasukanBulanIni || 0)}
-                  </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-amber-700">3.</span>
+                  <span><strong>Overhead:</strong> dipotong ketiga jika diskon masih tersisa</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Card 3: Total Pengeluaran */}
-            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className="text-[11px] font-semibold text-slate-500 truncate">Total Pengeluaran</span>
-                <div className="w-7 h-7 rounded-lg shrink-0 bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-                  <ArrowUpRight className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-amber-700">4.</span>
+                  <span><strong>Gaji Karyawan:</strong> dipotong keempat sebagai opsi terakhir</span>
                 </div>
-              </div>
-              <div>
-                <div className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400 font-mono tracking-tight leading-tight">
-                  -{formatRupiah(summary?.totalPengeluaran || 0)}
-                </div>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1 truncate">
-                  <span>Bulan ini:</span>
-                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
-                    -{formatRupiah(summary?.pengeluaranBulanIni || 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 4: Total Mutasi Transaksi */}
-            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className="text-[11px] font-semibold text-slate-500 truncate">Catatan Kas</span>
-                <div className="w-7 h-7 rounded-lg shrink-0 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                  <CreditCard className="w-3.5 h-3.5" />
-                </div>
-              </div>
-              <div>
-                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight leading-tight">
-                  {displayedTransactions.length} <span className="text-xs font-normal text-slate-500">item</span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-1 truncate">
-                  Total {transactions.length} mutasi tercatat
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-rose-600">5.</span>
+                  <span className="text-rose-600 font-semibold"><strong>Modal Vendor:</strong> Terkunci & Aman!</span>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Fast Action Buttons in Left Column */}
-          <div className="grid grid-cols-2 gap-2">
+      {/* 5 KANTONG CARDS SECTION (REPLACES SINGLE SALDO BERSIH) */}
+      <div className="space-y-2.5">
+        {/* Top Mini Banner: Grand Total Kas & Filter Kantong */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 p-3 px-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-slate-500">Total Kas Toko:</span>
+              <span className="text-sm sm:text-base font-black font-mono tracking-tight text-slate-900 dark:text-white">
+                {formatRupiah(summary?.saldoBersih || 0)}
+              </span>
+            </div>
+            <span className="text-slate-300 dark:text-slate-700">|</span>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-emerald-600 font-mono font-bold">
+                +{formatRupiah(summary?.totalPemasukan || 0)}
+              </span>
+              <span className="text-rose-600 font-mono font-bold">
+                -{formatRupiah(summary?.totalPengeluaran || 0)}
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Filter Pill by Kantong */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
+            <span className="text-[11px] font-semibold text-slate-400 mr-1 shrink-0 flex items-center gap-1">
+              <Filter className="w-3 h-3" />
+              Filter Kantong:
+            </span>
             <button
-              onClick={() => handleOpenCreateModal("masuk")}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+              onClick={() => setKantongFilter("all")}
+              className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 cursor-pointer transition-all ${
+                kantongFilter === "all"
+                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              <span>+ Pemasukan</span>
+              Semua Kantong
             </button>
+            {(Object.keys(KANTONG_CONFIG) as KantongKasType[]).map((kKey) => {
+              const cfg = KANTONG_CONFIG[kKey];
+              const isSelected = kantongFilter === kKey;
+              return (
+                <button
+                  key={kKey}
+                  onClick={() => setKantongFilter(isSelected ? "all" : kKey)}
+                  className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 cursor-pointer transition-all flex items-center gap-1 ${
+                    isSelected
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                  }`}
+                >
+                  <span>{cfg.shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 5-Pocket Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          {(Object.keys(KANTONG_CONFIG) as KantongKasType[]).map((kKey) => {
+            const cfg = KANTONG_CONFIG[kKey];
+            const bal = balances[kKey] || { saldo: 0, masuk: 0, keluar: 0 };
+            const isFilterActive = kantongFilter === kKey;
+            const IconComponent = cfg.icon;
+
+            return (
+              <div
+                key={kKey}
+                onClick={() => setKantongFilter(isFilterActive ? "all" : kKey)}
+                className={`p-3.5 rounded-2xl bg-white dark:bg-slate-900 border transition-all cursor-pointer relative flex flex-col justify-between hover:shadow-md ${
+                  isFilterActive
+                    ? "ring-2 ring-indigo-500 border-transparent shadow-sm bg-indigo-50/20 dark:bg-indigo-950/20"
+                    : "border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300"
+                }`}
+              >
+                {/* Card Top: Icon + Label + Filter indicator */}
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div
+                        className={`w-6 h-6 rounded-lg shrink-0 flex items-center justify-center ${cfg.badgeBg} ${cfg.badgeText}`}
+                      >
+                        <IconComponent className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                        {cfg.shortLabel}
+                      </span>
+                    </div>
+
+                    {kKey === "modal" && (
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900 shrink-0">
+                        🛡️ Aman
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[10px] text-slate-400 line-clamp-1 mb-2">
+                    {cfg.description}
+                  </p>
+                </div>
+
+                {/* Card Bottom: Nominal Saldo & In/Out Mini Info */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-1">
+                  <div className="flex items-baseline justify-between gap-1">
+                    <span className="text-[10px] font-semibold text-slate-400">Saldo:</span>
+                    <span
+                      className={`text-sm sm:text-base font-black font-mono tracking-tight ${
+                        bal.saldo >= 0 ? "text-slate-900 dark:text-white" : "text-rose-600"
+                      }`}
+                    >
+                      {formatRupiah(bal.saldo)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold truncate">
+                      +{formatRupiah(bal.masuk)}
+                    </span>
+                    <span className="text-rose-600 dark:text-rose-400 font-semibold truncate">
+                      -{formatRupiah(bal.keluar)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* TWO-COLUMN LAYOUT: Desktop/Tablet 2 columns, Mobile 1 column */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* LEFT COLUMN: Fast Action Buttons, AI Scanner, Category Breakdown */}
+        <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
+          {/* Action Buttons in Left Column: Standard Masuk/Keluar + Auto Allocate Order */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleOpenCreateModal("masuk")}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Pemasukan</span>
+              </button>
+              <button
+                onClick={() => handleOpenCreateModal("keluar")}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+              >
+                <Minus className="w-4 h-4" />
+                <span>− Pengeluaran</span>
+              </button>
+            </div>
+
+            {/* Special Button: Auto Allocate Order (5 Kantong HPP Splitting) */}
             <button
-              onClick={() => handleOpenCreateModal("keluar")}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+              onClick={handleOpenAutoAllocateModal}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xs transition-all cursor-pointer"
             >
-              <Minus className="w-4 h-4" />
-              <span>- Pengeluaran</span>
+              <Layers className="w-4 h-4 text-indigo-600" />
+              <span>⚡ Alokasikan Order Cetak (5 Kantong HPP)</span>
             </button>
           </div>
 
@@ -474,7 +897,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                   <Sparkles className="w-3 h-3 text-amber-300 animate-pulse" />
                 </h4>
                 <p className="text-[10px] text-indigo-200">
-                  Foto nota otomatis dicatat oleh Gemini
+                  Foto nota otomatis diklasifikasikan ke 5 kantong
                 </p>
               </div>
             </div>
@@ -490,21 +913,32 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           {/* Category Composition Breakdown (Compact Accordion/Card) */}
           {summary && (summary.breakdownPemasukan.length > 0 || summary.breakdownPengeluaran.length > 0) && (
             <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <PieChart className="w-3.5 h-3.5 text-indigo-500" />
-                Komposisi Kategori Kas
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <PieChart className="w-3.5 h-3.5 text-indigo-500" />
+                  Komposisi Kategori Kas
+                </h4>
+                {kantongFilter !== "all" && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-600">
+                    {KANTONG_CONFIG[kantongFilter as KantongKasType]?.shortLabel}
+                  </span>
+                )}
+              </div>
 
               {/* Breakdown Pengeluaran Top */}
               {summary.breakdownPengeluaran.length > 0 && (
                 <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">Top Pengeluaran:</span>
+                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">
+                    Top Pengeluaran:
+                  </span>
                   {summary.breakdownPengeluaran.slice(0, 3).map((cat, idx) => {
                     const pct = summary.totalPengeluaran > 0 ? (cat.total / summary.totalPengeluaran) * 100 : 0;
                     return (
                       <div key={idx} className="space-y-0.5">
                         <div className="flex justify-between text-[11px]">
-                          <span className="truncate text-slate-600 dark:text-slate-400">{cat.kategori} ({cat.count}x)</span>
+                          <span className="truncate text-slate-600 dark:text-slate-400">
+                            {cat.kategori} ({cat.count}x)
+                          </span>
                           <span className="font-mono font-semibold text-rose-600 shrink-0">
                             {formatRupiah(cat.total)} ({pct.toFixed(0)}%)
                           </span>
@@ -521,13 +955,17 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
               {/* Breakdown Pemasukan Top */}
               {summary.breakdownPemasukan.length > 0 && (
                 <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Top Pemasukan:</span>
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">
+                    Top Pemasukan:
+                  </span>
                   {summary.breakdownPemasukan.slice(0, 3).map((cat, idx) => {
                     const pct = summary.totalPemasukan > 0 ? (cat.total / summary.totalPemasukan) * 100 : 0;
                     return (
                       <div key={idx} className="space-y-0.5">
                         <div className="flex justify-between text-[11px]">
-                          <span className="truncate text-slate-600 dark:text-slate-400">{cat.kategori} ({cat.count}x)</span>
+                          <span className="truncate text-slate-600 dark:text-slate-400">
+                            {cat.kategori} ({cat.count}x)
+                          </span>
                           <span className="font-mono font-semibold text-emerald-600 shrink-0">
                             {formatRupiah(cat.total)} ({pct.toFixed(0)}%)
                           </span>
@@ -546,7 +984,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
         {/* RIGHT COLUMN: Filter Bar & Minimalist Accordion Transaction History */}
         <div className="lg:col-span-7 space-y-3">
-          {/* Filter Bar (Compact & Sticky at Top) */}
+          {/* Filter Bar */}
           <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
             {/* Search Input */}
             <div className="relative">
@@ -568,7 +1006,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
               )}
             </div>
 
-            {/* Segmented Controls for Type Filter */}
+            {/* Segmented Controls for Type Filter & Date presets */}
             <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
               {/* Type Segmented Buttons */}
               <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl">
@@ -644,14 +1082,18 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                   {typeFilter !== "keluar" && (
                     <optgroup label="Pemasukan">
                       {incomeCategories.map((c) => (
-                        <option key={`in-${c}`} value={c}>{c}</option>
+                        <option key={`in-${c}`} value={c}>
+                          {c}
+                        </option>
                       ))}
                     </optgroup>
                   )}
                   {typeFilter !== "masuk" && (
                     <optgroup label="Pengeluaran">
                       {expenseCategories.map((c) => (
-                        <option key={`out-${c}`} value={c}>{c}</option>
+                        <option key={`out-${c}`} value={c}>
+                          {c}
+                        </option>
                       ))}
                     </optgroup>
                   )}
@@ -667,13 +1109,15 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                 >
                   <option value="all">Semua Kasir / Staff</option>
                   {uniqueKasirs.map((kasirName) => (
-                    <option key={kasirName} value={kasirName}>{kasirName}</option>
+                    <option key={kasirName} value={kasirName}>
+                      {kasirName}
+                    </option>
                   ))}
                 </select>
               </div>
             </div>
 
-            {/* Custom Date Pickers Range (when selected) */}
+            {/* Custom Date Pickers Range */}
             {dateRangeFilter === "custom" && (
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
                 <span className="font-semibold text-slate-500">Dari:</span>
@@ -698,20 +1142,26 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
             {/* List Header */}
             <div className="py-2.5 px-4 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-700 dark:text-slate-300">
-                Riwayat Transaksi ({displayedTransactions.length})
-              </span>
-              <span className="text-[11px] text-slate-400">
-                Klik baris untuk melihat detail
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300">
+                  Riwayat Transaksi ({displayedTransactions.length})
+                </span>
+                {kantongFilter !== "all" && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                    Kantong {KANTONG_CONFIG[kantongFilter as KantongKasType]?.shortLabel}
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-slate-400">Klik baris untuk rincian</span>
             </div>
 
-            {/* Minimalist Rows */}
+            {/* Rows */}
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {displayedTransactions.length > 0 ? (
                 displayedTransactions.map((tx) => {
                   const isIncome = tx.tipe === "masuk";
                   const isExpanded = expandedTxIds[tx.id] ?? false;
+                  const kantongCfg = KANTONG_CONFIG[tx.kantong as KantongKasType] || KANTONG_CONFIG.margin;
                   const timeStr = new Date(tx.tanggal).toLocaleTimeString("id-ID", {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -722,14 +1172,14 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       key={tx.id}
                       className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/30"
                     >
-                      {/* Baris Utama (Compact Single/Double Line) */}
+                      {/* Baris Utama */}
                       <div
                         onClick={() => toggleExpandTx(tx.id)}
                         className="p-3 sm:px-4 cursor-pointer flex items-center justify-between gap-2.5 select-none"
                       >
-                        {/* Kiri: Badge + Judul/Kategori + Tanggal & Ref */}
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
+                        {/* Kiri: Badge Type + Kantong Badge + Kategori + Ref */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {/* Badge Status Minimal */}
                             <span
                               className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-tight ${
@@ -746,12 +1196,20 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                               {isIncome ? "Masuk" : "Keluar"}
                             </span>
 
+                            {/* Badge Kantong Kas */}
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${kantongCfg.badgeBg} ${kantongCfg.badgeText}`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                              {kantongCfg.shortLabel}
+                            </span>
+
                             {/* Judul Kategori */}
                             <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
                               {tx.kategori}
                             </span>
 
-                            {/* Ref (Abu-abu kecil) */}
+                            {/* Ref */}
                             {tx.referensi && (
                               <span className="text-[10px] text-slate-400 font-mono">
                                 Ref: {tx.referensi}
@@ -765,7 +1223,9 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                             <span className="text-slate-300 dark:text-slate-600">•</span>
                             <span className="text-[10px] text-slate-400 font-mono">{timeStr} WIB</span>
                             <span className="text-slate-300 dark:text-slate-600">•</span>
-                            <span className="text-slate-600 dark:text-slate-300">{tx.metode_pembayaran || "Cash"}</span>
+                            <span className="text-slate-600 dark:text-slate-300">
+                              {tx.metode_pembayaran || "Cash"}
+                            </span>
                             {tx.created_by && (
                               <>
                                 <span className="text-slate-300 dark:text-slate-600">•</span>
@@ -775,7 +1235,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                           </div>
                         </div>
 
-                        {/* Kanan: Nominal + Icon Buttons (Edit, Hapus, Chevron) */}
+                        {/* Kanan: Nominal + Icon Buttons */}
                         <div className="flex items-center gap-2 shrink-0">
                           <div
                             className={`font-mono font-bold text-xs sm:text-sm text-right ${
@@ -804,7 +1264,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                             </button>
                           </div>
 
-                          {/* Accordion Chevron Indicator */}
+                          {/* Accordion Chevron */}
                           <div className="text-slate-400 pl-0.5">
                             {isExpanded ? (
                               <ChevronUp className="w-4 h-4" />
@@ -831,18 +1291,38 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                           )}
 
                           {/* Detail Grid */}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                             <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/60 dark:border-slate-800">
-                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">Metode Bayar</span>
-                              <span className="font-medium text-slate-800 dark:text-slate-200">{tx.metode_pembayaran || "Cash"}</span>
+                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+                                Kantong Kas
+                              </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                {kantongCfg.label}
+                              </span>
                             </div>
                             <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/60 dark:border-slate-800">
-                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">Dicatat Oleh</span>
-                              <span className="font-medium text-slate-800 dark:text-slate-200">{tx.created_by || "Admin"}</span>
+                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+                                Metode Bayar
+                              </span>
+                              <span className="font-medium text-slate-800 dark:text-slate-200">
+                                {tx.metode_pembayaran || "Cash"}
+                              </span>
                             </div>
-                            <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/60 dark:border-slate-800 col-span-2 sm:col-span-1">
-                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">Referensi Nota</span>
-                              <span className="font-mono text-slate-800 dark:text-slate-200">{tx.referensi || "-"}</span>
+                            <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+                                Dicatat Oleh
+                              </span>
+                              <span className="font-medium text-slate-800 dark:text-slate-200">
+                                {tx.created_by || "Admin"}
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+                                Referensi Nota
+                              </span>
+                              <span className="font-mono text-slate-800 dark:text-slate-200">
+                                {tx.referensi || "-"}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -860,42 +1340,57 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         </div>
       </div>
 
-      {/* Modal: Create & Edit Transaction */}
+      {/* MODAL: CREATE & EDIT TRANSACTION (STANDARD OR AUTO-ALLOCATE) */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-5">
+          <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-4 max-h-[92vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
-                {editingTransaction ? (
-                  <>
-                    <Edit2 className="w-4 h-4 text-indigo-600" />
-                    Edit Transaksi Kas #{editingTransaction.id}
-                  </>
-                ) : (
-                  <>
-                    {formType === "masuk" ? (
-                      <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                        <Plus className="w-4 h-4" />
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+                  {editingTransaction ? (
+                    <>
+                      <Edit2 className="w-4 h-4 text-indigo-600" />
+                      Edit Transaksi Kas #{editingTransaction.id}
+                    </>
+                  ) : modalMode === "auto_allocate" ? (
+                    <>
+                      <div className="w-6 h-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                        <Layers className="w-4 h-4" />
                       </div>
-                    ) : (
-                      <div className="w-6 h-6 rounded-md bg-rose-100 text-rose-700 flex items-center justify-center">
-                        <Minus className="w-4 h-4" />
-                      </div>
-                    )}
-                    {formType === "masuk" ? "Catat Pemasukan Kas" : "Catat Pengeluaran Kas"}
-                  </>
-                )}
-              </h3>
+                      Alokasi Kas Order Cetak (5 Kantong HPP)
+                    </>
+                  ) : (
+                    <>
+                      {formType === "masuk" ? (
+                        <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                          <Plus className="w-4 h-4" />
+                        </div>
+                      ) : (
+                        <div className="w-6 h-6 rounded-md bg-rose-100 text-rose-700 flex items-center justify-center">
+                          <Minus className="w-4 h-4" />
+                        </div>
+                      )}
+                      {formType === "masuk" ? "Catat Pemasukan Kas" : "Catat Pengeluaran Kas"}
+                    </>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {modalMode === "auto_allocate"
+                    ? "Otomatis pecah omzet ke 5 kantong kas dengan aturan proteksi modal"
+                    : "Pilih kantong kas tujuan agar pembukuan tetap presisi"}
+                </p>
+              </div>
+
               <button
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Error in modal */}
+            {/* Error banner in modal */}
             {errorMessage && (
               <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -903,197 +1398,535 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
               </div>
             )}
 
-            <form onSubmit={handleSaveTransaction} className="space-y-4 text-xs">
-              {/* Tipe Selector Toggle (Only when creating, or allow change) */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Tipe Transaksi *
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormType("masuk");
-                      setFormCategory(incomeCategories[0] || "Penjualan Order Cetak");
-                    }}
-                    className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 cursor-pointer border transition-colors ${
-                      formType === "masuk"
-                        ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs"
-                        : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                    }`}
-                  >
-                    <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
-                    Pemasukan (Uang Masuk)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormType("keluar");
-                      setFormCategory(expenseCategories[0] || "Kulakan Bahan Baku");
-                    }}
-                    className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 cursor-pointer border transition-colors ${
-                      formType === "keluar"
-                        ? "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs"
-                        : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                    }`}
-                  >
-                    <ArrowUpRight className="w-4 h-4 text-rose-600" />
-                    Pengeluaran (Uang Keluar)
-                  </button>
-                </div>
-              </div>
-
-              {/* Kategori */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Kategori Transaksi *
-                </label>
-                <select
-                  value={formCategory}
-                  onChange={(e) => setFormCategory(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
-                >
-                  {availableFormCategories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                  <option value="__custom__">+ Kategori Kustom Baru...</option>
-                </select>
-
-                {formCategory === "__custom__" && (
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ketik nama kategori baru..."
-                    value={customCategoryInput}
-                    onChange={(e) => setCustomCategoryInput(e.target.value)}
-                    className="w-full mt-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  />
-                )}
-              </div>
-
-              {/* Nominal & Tanggal */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Nominal Transaksi (Rp) *
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">
-                      Rp
-                    </span>
+            {/* MODE 1: AUTO ALLOCATE 5 KANTONG (ORDER SPLITTING) */}
+            {modalMode === "auto_allocate" ? (
+              <form onSubmit={handleSaveAutoAllocateOrder} className="space-y-4 text-xs">
+                {/* Reference / Order Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      No. Pesanan / Nota (Opsional)
+                    </label>
                     <input
-                      type="number"
-                      required
-                      min="100"
-                      step="500"
-                      placeholder="Contoh: 150000"
-                      value={formAmount}
-                      onChange={(e) => setFormAmount(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
+                      type="text"
+                      placeholder="Contoh: ORD-2025-0819"
+                      value={allocOrderRef}
+                      onChange={(e) => setAllocOrderRef(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
                     />
                   </div>
-                  {Number(formAmount) > 0 && (
-                    <p className="text-[11px] text-emerald-600 font-mono mt-1">
-                      = {formatRupiah(Number(formAmount))}
-                    </p>
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Nama Pelanggan (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Bpk. Bambang"
+                      value={allocCustomer}
+                      onChange={(e) => setAllocCustomer(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* 5 HPP Inputs */}
+                <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                      <Coins className="w-3.5 h-3.5 text-indigo-600" />
+                      Rincian Komponen HPP & Margin Produk
+                    </span>
+                    <span className="text-[11px] text-slate-400">Masukkan nilai komponen</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {/* Modal Vendor */}
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-blue-200 dark:border-blue-900">
+                      <label className="block text-[11px] font-bold text-blue-700 dark:text-blue-300 mb-1 flex items-center justify-between">
+                        <span>1. Modal (Bahan / Vendor) *</span>
+                        <span className="text-[9px] px-1 bg-blue-100 dark:bg-blue-950 rounded">🛡️ Terproteksi</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        placeholder="Rp 0"
+                        value={allocModal}
+                        onChange={(e) => setAllocModal(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    {/* Overhead */}
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900">
+                      <label className="block text-[11px] font-bold text-amber-700 dark:text-amber-300 mb-1">
+                        2. Overhead (Listrik/Wifi/Sewa)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        placeholder="Rp 0"
+                        value={allocOverhead}
+                        onChange={(e) => setAllocOverhead(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    {/* Gaji Saya */}
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-purple-200 dark:border-purple-900">
+                      <label className="block text-[11px] font-bold text-purple-700 dark:text-purple-300 mb-1">
+                        3. Gaji Saya (Owner / Desain)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        placeholder="Rp 0"
+                        value={allocGajiSaya}
+                        onChange={(e) => setAllocGajiSaya(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    {/* Gaji Karyawan */}
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-teal-200 dark:border-teal-900">
+                      <label className="block text-[11px] font-bold text-teal-700 dark:text-teal-300 mb-1">
+                        4. Gaji Karyawan (Operator)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        placeholder="Rp 0"
+                        value={allocGajiKaryawan}
+                        onChange={(e) => setAllocGajiKaryawan(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    {/* Margin / Profit */}
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900 sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">
+                        5. Margin / Profit Bersih Toko
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        placeholder="Rp 0"
+                        value={allocMargin}
+                        onChange={(e) => setAllocMargin(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diskon Order (Hierarchical Deduction) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Diskon / Potongan Harga (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="500"
+                      placeholder="Rp 0 (opsional)"
+                      value={allocDiskon}
+                      onChange={(e) => setAllocDiskon(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Metode Pembayaran
+                    </label>
+                    <select
+                      value={allocMethod}
+                      onChange={(e) => setAllocMethod(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                    >
+                      <option value="Cash">Cash / Tunai</option>
+                      <option value="Transfer BCA">Transfer BCA</option>
+                      <option value="Transfer Mandiri">Transfer Mandiri</option>
+                      <option value="QRIS">QRIS / E-Wallet</option>
+                      <option value="Lainnya">Lainnya</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live Preview of 5-Pocket Allocation */}
+                <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                    <span>Simulasi Hasil Alokasi ke 5 Kantong:</span>
+                    <span className="font-mono text-sm text-indigo-700 dark:text-indigo-300">
+                      Total Masuk Kas: {formatRupiah(allocationPreview.totalDiterima)}
+                    </span>
+                  </div>
+
+                  {/* Warning if discount exceeds non-modal capacity */}
+                  {allocationPreview.exceedsNonModal && (
+                    <div className="p-2 bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 rounded-lg border border-rose-300 flex items-center gap-2 text-[11px]">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>
+                        <strong>Peringatan:</strong> Diskon melebihi kapasitas 4 kantong non-modal — akan mengurangi
+                        Kantong Modal sebesar <strong>{formatRupiah(allocationPreview.potongan.modal)}</strong>!
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 5 Pocket Allocation Chips */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-[11px] font-mono">
+                    <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-blue-200 dark:border-blue-900">
+                      <span className="text-[10px] text-blue-700 dark:text-blue-300 block font-bold">Modal:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {formatRupiah(allocationPreview.alokasi.modal)}
+                      </span>
+                      {allocationPreview.potongan.modal > 0 && (
+                        <span className="text-[9px] text-rose-500 block">(-{formatRupiah(allocationPreview.potongan.modal)})</span>
+                      )}
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-amber-200 dark:border-amber-900">
+                      <span className="text-[10px] text-amber-700 dark:text-amber-300 block font-bold">Overhead:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {formatRupiah(allocationPreview.alokasi.overhead)}
+                      </span>
+                      {allocationPreview.potongan.overhead > 0 && (
+                        <span className="text-[9px] text-rose-500 block">(-{formatRupiah(allocationPreview.potongan.overhead)})</span>
+                      )}
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-purple-200 dark:border-purple-900">
+                      <span className="text-[10px] text-purple-700 dark:text-purple-300 block font-bold">Gaji Saya:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {formatRupiah(allocationPreview.alokasi.gajiSaya)}
+                      </span>
+                      {allocationPreview.potongan.gajiSaya > 0 && (
+                        <span className="text-[9px] text-rose-500 block">(-{formatRupiah(allocationPreview.potongan.gajiSaya)})</span>
+                      )}
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-teal-200 dark:border-teal-900">
+                      <span className="text-[10px] text-teal-700 dark:text-teal-300 block font-bold">Gaji Staff:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {formatRupiah(allocationPreview.alokasi.gajiKaryawan)}
+                      </span>
+                      {allocationPreview.potongan.gajiKaryawan > 0 && (
+                        <span className="text-[9px] text-rose-500 block">(-{formatRupiah(allocationPreview.potongan.gajiKaryawan)})</span>
+                      )}
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900 col-span-2 sm:col-span-1">
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-300 block font-bold">Margin:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {formatRupiah(allocationPreview.alokasi.margin)}
+                      </span>
+                      {allocationPreview.potongan.margin > 0 && (
+                        <span className="text-[9px] text-rose-500 block">(-{formatRupiah(allocationPreview.potongan.margin)})</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setModalMode("standard")}
+                    className="text-xs text-indigo-600 hover:underline font-semibold cursor-pointer"
+                  >
+                    ← Beralih ke Form Standar
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submitting || allocationPreview.subtotal <= 0}
+                      className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm cursor-pointer disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      {submitting ? "Mengalokasikan..." : "Simpan & Alokasikan ke 5 Kantong"}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              /* MODE 2: STANDARD TRANSACTION FORM (MASUK / KELUAR) */
+              <form onSubmit={handleSaveStandardTransaction} className="space-y-4 text-xs">
+                {/* Tipe Selector Toggle (Only when creating) */}
+                {!editingTransaction && (
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Tipe Transaksi *
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormType("masuk");
+                          setFormKantong("margin");
+                          setFormCategory(incomeCategories.length > 0 ? incomeCategories[0] : "__custom__");
+                        }}
+                        className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 cursor-pointer border transition-colors ${
+                          formType === "masuk"
+                            ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                        }`}
+                      >
+                        <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                        Pemasukan (Uang Masuk)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormType("keluar");
+                          setFormKantong("modal");
+                          setFormCategory(expenseCategories.length > 0 ? expenseCategories[0] : "__custom__");
+                        }}
+                        className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 cursor-pointer border transition-colors ${
+                          formType === "keluar"
+                            ? "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                        }`}
+                      >
+                        <ArrowUpRight className="w-4 h-4 text-rose-600" />
+                        Pengeluaran (Uang Keluar)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Kantong Kas Dropdown with Balance Display */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Kantong Kas Tujuan *
+                    </label>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Saldo Saat Ini: <strong>{formatRupiah(currentSelectedPocketBalance)}</strong>
+                    </span>
+                  </div>
+
+                  <select
+                    value={formKantong}
+                    onChange={(e) => setFormKantong(e.target.value as KantongKasType)}
+                    className="w-full px-3 py-2 rounded-lg bg-indigo-50/40 dark:bg-slate-800 border border-indigo-200 dark:border-slate-700 text-slate-900 dark:text-white font-bold"
+                  >
+                    {(Object.keys(KANTONG_CONFIG) as KantongKasType[]).map((kKey) => {
+                      const cfg = KANTONG_CONFIG[kKey];
+                      const bal = balances[kKey]?.saldo ?? 0;
+                      return (
+                        <option key={kKey} value={kKey}>
+                          {cfg.label} — (Saldo: {formatRupiah(bal)})
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {/* Warning if expense exceeds selected pocket balance */}
+                  {isSelectedExpenseExceeding && (
+                    <div className="mt-1.5 p-2 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>
+                        Peringatan: Pengeluaran ini melebihi saldo kas kantong saat ini ({formatRupiah(currentSelectedPocketBalance)}).
+                      </span>
+                    </div>
                   )}
                 </div>
 
+                {/* Kategori */}
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Tanggal Transaksi *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Metode Pembayaran & Referensi */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Metode Pembayaran
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Kategori Transaksi *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCategoryModalOpen(true)}
+                      className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Settings className="w-3 h-3" />
+                      Kelola Kategori
+                    </button>
+                  </div>
                   <select
-                    value={formMethod}
-                    onChange={(e) => setFormMethod(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
                   >
-                    <option value="Cash">Cash / Tunai</option>
-                    <option value="Transfer BCA">Transfer BCA</option>
-                    <option value="Transfer Mandiri">Transfer Mandiri</option>
-                    <option value="QRIS">QRIS / E-Wallet</option>
-                    <option value="Lainnya">Metode Lainnya</option>
+                    {formCategory &&
+                      formCategory !== "__custom__" &&
+                      !availableFormCategories.includes(formCategory) && (
+                        <option value={formCategory}>{formCategory} (Snapshot)</option>
+                      )}
+                    {availableFormCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="__custom__">+ Kategori Kustom Baru...</option>
                   </select>
+
+                  {formCategory === "__custom__" && (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ketik nama kategori baru..."
+                      value={customCategoryInput}
+                      onChange={(e) => setCustomCategoryInput(e.target.value)}
+                      className="w-full mt-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                    />
+                  )}
                 </div>
 
+                {/* Nominal & Tanggal */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Nominal Transaksi (Rp) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        required
+                        min="100"
+                        step="500"
+                        placeholder="Contoh: 150000"
+                        value={formAmount}
+                        onChange={(e) => setFormAmount(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
+                      />
+                    </div>
+                    {Number(formAmount) > 0 && (
+                      <p className="text-[11px] text-emerald-600 font-mono mt-1">
+                        = {formatRupiah(Number(formAmount))}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Tanggal Transaksi *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Metode Pembayaran & Referensi */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Metode Pembayaran
+                    </label>
+                    <select
+                      value={formMethod}
+                      onChange={(e) => setFormMethod(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                    >
+                      <option value="Cash">Cash / Tunai</option>
+                      <option value="Transfer BCA">Transfer BCA</option>
+                      <option value="Transfer Mandiri">Transfer Mandiri</option>
+                      <option value="QRIS">QRIS / E-Wallet</option>
+                      <option value="Lainnya">Metode Lainnya</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      No. Referensi / Nota (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: INV-20250821-0001 / PLN-123"
+                      value={formReference}
+                      onChange={(e) => setFormReference(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Keterangan */}
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    No. Referensi / Nota (Opsional)
+                    Keterangan & Rincian Transaksi *
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: INV-20250821-0001 / PLN-123"
-                    value={formReference}
-                    onChange={(e) => setFormReference(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                  <textarea
+                    required
+                    rows={2}
+                    placeholder="Contoh: Pelunasan cetak banner 3x1m & stiker vinyl (Bpk. Joko)"
+                    value={formDescription}
+                    onChange={(e) => setFormDescription(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                   />
                 </div>
-              </div>
 
-              {/* Keterangan */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Keterangan & Rincian Transaksi *
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="Contoh: Pelunasan cetak banner 3x1m & stiker vinyl (Bpk. Joko)"
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+                  {!editingTransaction && formType === "masuk" ? (
+                    <button
+                      type="button"
+                      onClick={() => setModalMode("auto_allocate")}
+                      className="text-xs text-indigo-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      Gunakan Alokasi 5 Kantong HPP →
+                    </button>
+                  ) : (
+                    <div />
+                  )}
 
-              {/* Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 cursor-pointer"
-                >
-                  Batal
-                </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 cursor-pointer"
+                    >
+                      Batal
+                    </button>
 
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className={`inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white rounded-lg shadow-sm transition-colors cursor-pointer ${
-                    formType === "masuk"
-                      ? "bg-emerald-600 hover:bg-emerald-700"
-                      : "bg-rose-600 hover:bg-rose-700"
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  {submitting
-                    ? "Menyimpan..."
-                    : editingTransaction
-                    ? "Simpan Perubahan"
-                    : formType === "masuk"
-                    ? "Simpan Pemasukan"
-                    : "Simpan Pengeluaran"}
-                </button>
-              </div>
-            </form>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className={`inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white rounded-lg shadow-sm transition-colors cursor-pointer ${
+                        formType === "masuk"
+                          ? "bg-emerald-600 hover:bg-emerald-700"
+                          : "bg-rose-600 hover:bg-rose-700"
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      {submitting
+                        ? "Menyimpan..."
+                        : editingTransaction
+                        ? "Simpan Perubahan"
+                        : formType === "masuk"
+                        ? "Simpan Pemasukan"
+                        : "Simpan Pengeluaran"}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -1144,6 +1977,14 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         }}
         incomeCategories={incomeCategories}
         expenseCategories={expenseCategories}
+      />
+
+      {/* Category Manager Modal */}
+      <CategoryManagerModal
+        isOpen={categoryModalOpen}
+        onClose={() => setCategoryModalOpen(false)}
+        categories={allCategories}
+        onCategoriesChanged={loadFinanceData}
       />
     </div>
   );

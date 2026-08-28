@@ -8,6 +8,7 @@ import {
   Truck,
   Wallet,
   Settings,
+  BookOpen,
   LogOut,
   Globe,
   Bell,
@@ -19,6 +20,7 @@ import {
   Shield,
   User,
   AlertTriangle,
+  Calculator,
 } from "lucide-react";
 
 interface AdminLayoutProps {
@@ -45,7 +47,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const menuItems = [
+  const isOwner = user?.role === "owner";
+
+  const allMenuItems = [
     {
       id: "dashboard",
       label: "Dashboard Ringkasan",
@@ -63,6 +67,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       icon: Tag,
     },
     {
+      id: "calculator",
+      label: "Kalkulator HPP",
+      icon: Calculator,
+    },
+    {
       id: "vendors",
       label: "Vendor & Kulakan",
       icon: Truck,
@@ -76,8 +85,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       id: "settings",
       label: "Pengaturan & Staff",
       icon: Settings,
+      ownerOnly: true,
+    },
+    {
+      id: "guides",
+      label: "Panduan Kerja",
+      icon: BookOpen,
     },
   ];
+
+  const menuItems = allMenuItems.filter((item) => !item.ownerOnly || isOwner);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex transition-colors text-slate-900 dark:text-slate-100">
@@ -244,7 +261,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </header>
 
         {/* Page Body */}
-        <main className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1">
+        <main className="p-3 sm:p-5 lg:p-6 w-full max-w-[1600px] mx-auto flex-1">
           {children}
         </main>
       </div>

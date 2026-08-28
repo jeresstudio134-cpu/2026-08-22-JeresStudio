@@ -106,6 +106,52 @@ export const api = {
       body: JSON.stringify({ field }),
     }),
 
+  // Product Vendors & Margin
+  getProductVendors: (productId: number) =>
+    request<{ product_vendors: any[]; product: any }>(`/api/products/${productId}/vendors`),
+
+  addProductVendor: (productId: number, data: { vendor_id: number; harga_modal: number; catatan?: string; is_default?: boolean }) =>
+    request<{ message: string; product_vendor: any }>(`/api/products/${productId}/vendors`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateProductVendor: (id: number, data: { harga_modal?: number; catatan?: string; is_default?: boolean }) =>
+    request<{ message: string; product_vendor: any }>(`/api/product-vendors/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteProductVendor: (id: number) =>
+    request<{ message: string }>(`/api/product-vendors/${id}`, {
+      method: "DELETE",
+    }),
+
+  batchApplySimulations: (items: Array<{
+    productId: number;
+    newPrice?: number;
+    newVendorCost?: number;
+    vendorId?: number;
+    updatePrice?: boolean;
+    updateVendorCost?: boolean;
+  }>) =>
+    request<{ message: string; updatedProductCount: number; updatedVendorCostCount: number }>(
+      "/api/products/batch-apply-simulations",
+      {
+        method: "POST",
+        body: JSON.stringify({ items }),
+      }
+    ),
+
+  getMarginThresholds: () =>
+    request<{ margin_threshold_good: number; margin_threshold_warning: number }>("/api/settings/margin-threshold"),
+
+  updateMarginThresholds: (data: { margin_threshold_good: number; margin_threshold_warning: number }) =>
+    request<{ message: string; margin_threshold_good: number; margin_threshold_warning: number }>("/api/settings/margin-threshold", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
   // Orders
   getOrders: (params?: { status?: string; status_bayar?: string; search?: string; startDate?: string; endDate?: string }) => {
     const query = new URLSearchParams();
@@ -132,11 +178,31 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  updateOrderStatus: (id: number, data: { status?: string; status_bayar?: string }) =>
+  updateOrderStatus: (id: number, data: { status?: string; status_bayar?: string; progress_detail?: string }) =>
     request<{ message: string; order: any }>(`/api/orders/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+
+  generateShareLink: (id: number) =>
+    request<{
+      message: string;
+      share_token: string;
+      share_url: string;
+      expires_at: string | null;
+      order: any;
+    }>(`/api/orders/${id}/share`, {
+      method: "POST",
+    }),
+
+  addProgressNote: (id: number, data: { detail: string; status?: string }) =>
+    request<{ message: string; progress_notes: any[]; order: any }>(`/api/orders/${id}/progress-notes`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getPublicTracking: (token: string) =>
+    request<any>(`/api/public/track/${token}`),
 
   deleteOrder: (id: number) =>
     request<{ message: string }>(`/api/orders/${id}`, {
@@ -189,6 +255,7 @@ export const api = {
   getTransactions: (filters?: {
     tipe?: string;
     kategori?: string;
+    kantong?: string;
     startDate?: string;
     endDate?: string;
     search?: string;
@@ -197,6 +264,7 @@ export const api = {
     const query = new URLSearchParams();
     if (filters?.tipe) query.append("tipe", filters.tipe);
     if (filters?.kategori) query.append("kategori", filters.kategori);
+    if (filters?.kantong) query.append("kantong", filters.kantong);
     if (filters?.startDate) query.append("startDate", filters.startDate);
     if (filters?.endDate) query.append("endDate", filters.endDate);
     if (filters?.search) query.append("search", filters.search);
@@ -204,14 +272,64 @@ export const api = {
     return request<{ transactions: any[] }>(`/api/transactions?${query.toString()}`);
   },
 
-  getTransactionSummary: () =>
-    request<{ summary: any }>("/api/transactions/summary"),
+  getTransactionSummary: (kantong?: string) => {
+    const query = kantong && kantong !== "all" ? `?kantong=${encodeURIComponent(kantong)}` : "";
+    return request<{ summary: any }>(`/api/transactions/summary${query}`);
+  },
 
   getTransactionCategories: () =>
-    request<{ incomeCategories: string[]; expenseCategories: string[] }>("/api/transactions/categories"),
+    request<{ incomeCategories: string[]; expenseCategories: string[]; categories?: any[] }>("/api/transactions/categories"),
+
+  // Category Management CRUD
+  getCategories: () =>
+    request<{ categories: any[]; incomeCategories: string[]; expenseCategories: string[] }>("/api/categories"),
+
+  createCategory: (data: { name: string; type: "masuk" | "keluar" }) =>
+    request<{ message: string; category: any }>("/api/categories", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateCategory: (id: number, data: { name: string; type?: "masuk" | "keluar" }) =>
+    request<{ message: string; category: any }>(`/api/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number) =>
+    request<{ message: string; category?: any }>(`/api/categories/${id}`, {
+      method: "DELETE",
+    }),
 
   createTransaction: (data: any) =>
     request<{ message: string; transaction: any }>("/api/transactions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  autoAllocateOrder: (data: {
+    nomor_nota?: string;
+    breakdownHPP: {
+      modal: number;
+      overhead: number;
+      gajiSaya: number;
+      gajiKaryawan: number;
+      margin: number;
+    };
+    diskon?: number;
+    tanggal?: string;
+    metode_pembayaran?: string;
+    keterangan?: string;
+    customer_name?: string;
+  }) =>
+    request<{
+      message: string;
+      transactions: any[];
+      alokasi: any;
+      sisaDiskonTidakTertutup: number;
+      potonganModal: number;
+      totalAllocated: number;
+    }>("/api/transactions/auto-allocate-order", {
       method: "POST",
       body: JSON.stringify(data),
     }),
@@ -251,6 +369,53 @@ export const api = {
     request<{ message: string }>("/api/settings/restore", {
       method: "POST",
       body: JSON.stringify({ backupData }),
+    }),
+
+  // Public & Sharing
+  getPublicOrder: (id: string | number) =>
+    request<{ order: any; store: any }>(`/api/public/orders/${id}`),
+
+  sendInvoiceEmail: (data: {
+    orderId: number | string;
+    recipientEmail: string;
+    subject?: string;
+    message?: string;
+    publicInvoiceUrl?: string;
+  }) =>
+    request<{
+      success: boolean;
+      method: string;
+      message: string;
+      mailtoUrl?: string;
+      data?: any;
+    }>("/api/send-invoice-email", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Guides & SOP / Template Chat
+  getGuides: (params?: { category?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.category) query.set("category", params.category);
+    if (params?.search) query.set("search", params.search);
+    return request<{ guides: any[]; categories: string[] }>(`/api/guides?${query.toString()}`);
+  },
+
+  createGuide: (data: { category: string; title: string; content: string }) =>
+    request<{ message: string; guide: any }>("/api/guides", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateGuide: (id: number, data: { category?: string; title?: string; content?: string }) =>
+    request<{ message: string; guide: any }>(`/api/guides/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteGuide: (id: number) =>
+    request<{ message: string; guide?: any }>(`/api/guides/${id}`, {
+      method: "DELETE",
     }),
 
   // Activities

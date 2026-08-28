@@ -48,6 +48,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   // Editable Form State (populated from AI scan)
   const [formType, setFormType] = useState<"masuk" | "keluar">("keluar");
+  const [formKantong, setFormKantong] = useState<"modal" | "overhead" | "gaji_saya" | "gaji_karyawan" | "margin">("modal");
   const [formCategory, setFormCategory] = useState("");
   const [formVendor, setFormVendor] = useState("");
   const [formAmount, setFormAmount] = useState("");
@@ -70,6 +71,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       setScanError("");
       setIsSaving(false);
       setFormType("keluar");
+      setFormKantong("modal");
       setFormCategory(expenseCategories[0] || "Kulakan Bahan Baku");
       setFormVendor("");
       setFormAmount("");
@@ -146,6 +148,24 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       // Populate form
       const detectedType = result.tipe === "masuk" ? "masuk" : "keluar";
       setFormType(detectedType);
+
+      if (result.kantong && ["modal", "overhead", "gaji_saya", "gaji_karyawan", "margin"].includes(result.kantong)) {
+        setFormKantong(result.kantong as any);
+      } else {
+        // Fallback guess based on type & category
+        const cat = (result.kategori || "").toLowerCase();
+        if (cat.includes("bahan") || cat.includes("kulakan") || cat.includes("tinta") || cat.includes("film") || cat.includes("vendor")) {
+          setFormKantong("modal");
+        } else if (cat.includes("karyawan") || cat.includes("upah") || cat.includes("staff")) {
+          setFormKantong("gaji_karyawan");
+        } else if (cat.includes("pribadi") || cat.includes("owner") || cat.includes("desain")) {
+          setFormKantong("gaji_saya");
+        } else if (detectedType === "masuk") {
+          setFormKantong("margin");
+        } else {
+          setFormKantong("overhead");
+        }
+      }
 
       // Check if category matches existing, else custom
       const availableCategories = detectedType === "masuk" ? incomeCategories : expenseCategories;
@@ -230,6 +250,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       const payload = {
         tipe: formType,
         kategori: finalCategory,
+        kantong: formKantong,
         nominal: parsedNominal,
         tanggal: formDate,
         metode_pembayaran: formMethod,
@@ -238,7 +259,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       };
 
       await api.createTransaction(payload);
-      onSuccess(`Nota berhasil dipindai & dicatat ke kas ${formType === "masuk" ? "pemasukan" : "pengeluaran"}!`);
+      onSuccess(`Nota berhasil dipindai & dicatat ke kas ${formType === "masuk" ? "pemasukan" : "pengeluaran"} (${formKantong})!`);
       onClose();
     } catch (err: any) {
       setScanError(err.message || "Gagal menyimpan transaksi kas.");
@@ -485,6 +506,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                         onClick={() => {
                           setFormType("keluar");
                           setFormCategory(expenseCategories[0] || "Kulakan Bahan Baku");
+                          setFormKantong("modal");
                         }}
                         className={`py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer border transition-colors ${
                           formType === "keluar"
@@ -501,6 +523,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                         onClick={() => {
                           setFormType("masuk");
                           setFormCategory(incomeCategories[0] || "Penjualan Order Cetak");
+                          setFormKantong("margin");
                         }}
                         className={`py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer border transition-colors ${
                           formType === "masuk"
@@ -512,6 +535,24 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                         Pemasukan (Bukti Bayar)
                       </button>
                     </div>
+                  </div>
+
+                  {/* Kantong Kas Tujuan */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Kantong Kas Tujuan *
+                    </label>
+                    <select
+                      value={formKantong}
+                      onChange={(e) => setFormKantong(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-slate-900 dark:text-white font-medium text-xs focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="modal">Kantong Modal (Vendor, Bahan Baku, Tinta, Mesin)</option>
+                      <option value="overhead">Kantong Overhead (Operasional, Listrik, WiFi, Sewa, ATK)</option>
+                      <option value="gaji_saya">Kantong Gaji Saya (Owner / Desain)</option>
+                      <option value="gaji_karyawan">Kantong Gaji Karyawan (Operator & Staff)</option>
+                      <option value="margin">Kantong Margin / Profit (Keuntungan Bersih Toko)</option>
+                    </select>
                   </div>
 
                   {/* Kategori & Toko / Merchant */}

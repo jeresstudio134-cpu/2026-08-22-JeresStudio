@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Product } from "../../types/index.js";
+import React, { useState, useEffect, useMemo } from "react";
+import { Product, MarginThresholdSettings } from "../../types/index.js";
 import { api } from "../../lib/api.js";
 import { formatRupiah } from "../../lib/utils.js";
 import {
@@ -22,8 +22,13 @@ import {
   ZoomIn,
   Link as LinkIcon,
   Layers,
+  Building2,
+  Settings,
+  TrendingUp,
 } from "lucide-react";
 import { ImagePreviewLightbox } from "../../components/ImagePreviewLightbox.js";
+import { ManageProductVendorsModal } from "../../components/ManageProductVendorsModal.js";
+import { MarginThresholdModal } from "../../components/MarginThresholdModal.js";
 
 export const AdminProducts: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -31,6 +36,17 @@ export const AdminProducts: React.FC = () => {
   const [search, setSearch] = useState("");
   const [selectedKategori, setSelectedKategori] = useState("all");
   const [sortBy, setSortBy] = useState<"nama" | "hargaAsc" | "hargaDesc">("nama");
+
+  // Margin Thresholds State
+  const [marginThresholds, setMarginThresholds] = useState<MarginThresholdSettings>({
+    margin_threshold_good: 20,
+    margin_threshold_warning: 10,
+  });
+  const [thresholdModalOpen, setThresholdModalOpen] = useState(false);
+
+  // Vendor Management Modal State
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [selectedProductForVendor, setSelectedProductForVendor] = useState<Product | null>(null);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -48,6 +64,8 @@ export const AdminProducts: React.FC = () => {
     tampilkan_harga_publik: true,
   });
   const [manualUrlInput, setManualUrlInput] = useState("");
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -64,15 +82,34 @@ export const AdminProducts: React.FC = () => {
     subtitle: "",
   });
 
-  const categories = [
-    { id: "all", label: "Semua Kategori" },
-    { id: "stiker", label: "Stiker" },
-    { id: "dtf", label: "DTF & Sablon" },
-    { id: "banner", label: "Banner" },
-    { id: "jersey", label: "Jersey" },
-    { id: "desain", label: "Desain" },
+  const defaultCategoryList = useMemo(() => [
+    { id: "stiker", label: "Stiker & Cutting" },
+    { id: "dtf", label: "DTF & Sablon Kaos" },
+    { id: "banner", label: "Banner & Spanduk" },
+    { id: "jersey", label: "Jersey Custom" },
+    { id: "desain", label: "Jasa Desain" },
     { id: "lainnya", label: "Lainnya" },
-  ];
+  ], []);
+
+  const categories = useMemo(() => {
+    const list = [{ id: "all", label: "Semua Kategori" }];
+    const seen = new Set<string>();
+    defaultCategoryList.forEach((c) => {
+      list.push(c);
+      seen.add(c.id.toLowerCase());
+    });
+    products.forEach((p) => {
+      if (p.kategori) {
+        const k = p.kategori.toLowerCase().trim();
+        if (!seen.has(k)) {
+          seen.add(k);
+          const label = p.kategori.charAt(0).toUpperCase() + p.kategori.slice(1);
+          list.push({ id: k, label });
+        }
+      }
+    });
+    return list;
+  }, [products, defaultCategoryList]);
 
   const fetchProducts = async () => {
     try {
@@ -86,12 +123,32 @@ export const AdminProducts: React.FC = () => {
     }
   };
 
+  const fetchThresholds = async () => {
+    try {
+      const res = await api.getMarginThresholds();
+      setMarginThresholds({
+        margin_threshold_good: Number(res.margin_threshold_good ?? 20),
+        margin_threshold_warning: Number(res.margin_threshold_warning ?? 10),
+      });
+    } catch (err) {
+      console.error("Fetch margin thresholds error:", err);
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchThresholds();
   }, []);
+
+  const handleOpenVendorModal = (prod: Product) => {
+    setSelectedProductForVendor(prod);
+    setVendorModalOpen(true);
+  };
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
+    setIsCustomCategory(false);
+    setCustomCategoryName("");
     setFormData({
       kategori: "stiker",
       nama_item: "",
@@ -111,6 +168,8 @@ export const AdminProducts: React.FC = () => {
 
   const handleOpenEdit = (prod: Product) => {
     setEditingProduct(prod);
+    setIsCustomCategory(false);
+    setCustomCategoryName("");
     const existingImages = Array.isArray(prod.images) && prod.images.length > 0
       ? prod.images
       : (prod.gambar_url ? [prod.gambar_url] : []);
@@ -280,12 +339,22 @@ export const AdminProducts: React.FC = () => {
       return;
     }
 
+    const resolvedKategori = isCustomCategory
+      ? customCategoryName.trim().toLowerCase()
+      : formData.kategori.trim().toLowerCase();
+
+    if (isCustomCategory && !customCategoryName.trim()) {
+      setFormError("Nama kategori baru wajib diisi.");
+      return;
+    }
+
     try {
       setSaving(true);
       setFormError(null);
       
       const payload = {
         ...formData,
+        kategori: resolvedKategori || "lainnya",
         gambar_url: formData.images[0] || "",
       };
 
@@ -295,6 +364,8 @@ export const AdminProducts: React.FC = () => {
         await api.createProduct(payload);
       }
       setModalOpen(false);
+      setIsCustomCategory(false);
+      setCustomCategoryName("");
       fetchProducts();
     } catch (err: any) {
       setFormError(err.message || "Gagal menyimpan data produk.");
@@ -338,13 +409,60 @@ export const AdminProducts: React.FC = () => {
     });
   };
 
+  // Helper to render margin badge with thresholds
+  const renderMarginCell = (prod: Product) => {
+    const defaultVendor = prod.default_vendor;
+    if (!defaultVendor || defaultVendor.harga_modal === undefined) {
+      return (
+        <button
+          onClick={() => handleOpenVendorModal(prod)}
+          className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+        >
+          <Plus className="w-3 h-3" /> Pasang Vendor
+        </button>
+      );
+    }
+
+    const hargaJual = prod.harga || 0;
+    const hargaModal = defaultVendor.harga_modal || 0;
+    const marginNominal = hargaJual - hargaModal;
+    const marginPersen = hargaJual > 0 ? ((hargaJual - hargaModal) / hargaJual) * 100 : 0;
+
+    const good = marginThresholds.margin_threshold_good ?? 20;
+    const warning = marginThresholds.margin_threshold_warning ?? 10;
+
+    let badgeClass = "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800";
+
+    if (marginPersen >= good) {
+      badgeClass = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800";
+    } else if (marginPersen >= warning) {
+      badgeClass = "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800";
+    }
+
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <div className="text-[11px] text-slate-500 font-mono">
+          Modal: <span className="font-bold text-slate-700 dark:text-slate-300">{formatRupiah(hargaModal)}</span>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono border ${badgeClass}`}
+          title={`Margin Profit: ${formatRupiah(marginNominal)} (${marginPersen.toFixed(1)}%)`}
+        >
+          {marginNominal >= 0 ? "+" : ""}
+          {formatRupiah(marginNominal)} ({marginPersen.toFixed(1)}%)
+        </span>
+      </div>
+    );
+  };
+
   const filteredAndSortedProducts = products
     .filter((p) => {
       const matchCat = selectedKategori === "all" || p.kategori.toLowerCase() === selectedKategori.toLowerCase();
       const matchSearch =
         search === "" ||
         p.nama_item.toLowerCase().includes(search.toLowerCase()) ||
-        (p.deskripsi && p.deskripsi.toLowerCase().includes(search.toLowerCase()));
+        (p.deskripsi && p.deskripsi.toLowerCase().includes(search.toLowerCase())) ||
+        (p.default_vendor && p.default_vendor.nama_vendor.toLowerCase().includes(search.toLowerCase()));
       return matchCat && matchSearch;
     })
     .sort((a, b) => {
@@ -362,18 +480,31 @@ export const AdminProducts: React.FC = () => {
             Manajemen Price List & Produk
           </h2>
           <p className="text-xs text-slate-500">
-            Kelola katalog item cetak, multiple foto produk, harga satuan, dan ketersediaan publik
+            Kelola katalog item cetak, multi-vendor supply, analisis margin profit, dan ketersediaan publik
           </p>
         </div>
 
-        <button
-          id="btn-tambah-produk"
-          onClick={handleOpenAdd}
-          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Tambah Item Produk
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Settings Margin Thresholds Button */}
+          <button
+            onClick={() => setThresholdModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs transition-all cursor-pointer"
+            title="Konfigurasi ambang batas warna margin profit"
+          >
+            <Settings className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Batas Margin</span>
+          </button>
+
+          {/* Add Product Button */}
+          <button
+            id="btn-tambah-produk"
+            onClick={handleOpenAdd}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Item Produk</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters & Search Toolbar */}
@@ -384,7 +515,7 @@ export const AdminProducts: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Cari nama produk..."
+              placeholder="Cari produk atau vendor..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -417,17 +548,206 @@ export const AdminProducts: React.FC = () => {
         </div>
       </div>
 
-      {/* Products Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+      {/* Products Display: Desktop Table (hidden md:block) & Mobile Card List (block md:hidden) */}
+      
+      {/* 1. Mobile Card List View */}
+      <div className="block md:hidden space-y-3">
+        {filteredAndSortedProducts.length > 0 ? (
+          filteredAndSortedProducts.map((prod) => {
+            const prodImages = Array.isArray(prod.images) && prod.images.length > 0
+              ? prod.images
+              : (prod.gambar_url ? [prod.gambar_url] : []);
+            const coverImg = prodImages[0] || prod.gambar_url;
+            const totalImages = prodImages.length;
+            const defaultVendor = prod.default_vendor;
+            const vendorCount = prod.vendor_count || (prod.product_vendors?.length ?? (defaultVendor ? 1 : 0));
+
+            return (
+              <div
+                key={prod.id}
+                className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3"
+              >
+                {/* Header: Image & Basic Details */}
+                <div className="flex items-start gap-3">
+                  {/* Thumbnail with Lightbox */}
+                  {coverImg ? (
+                    <div
+                      onClick={() => handleOpenTableLightbox(prod)}
+                      className="relative w-16 h-16 rounded-xl overflow-hidden shrink-0 group cursor-pointer border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-2xs"
+                      title="Klik untuk melihat preview galeri foto"
+                    >
+                      <img
+                        src={coverImg}
+                        alt={prod.nama_item}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 active:opacity-100 group-hover:opacity-100 transition-opacity">
+                        <ZoomIn className="w-4 h-4 text-white drop-shadow-sm" />
+                      </div>
+                      {totalImages > 1 && (
+                        <span className="absolute bottom-0 right-0 px-1 py-0.2 bg-slate-900/90 text-white text-[9px] font-bold rounded-tl font-mono border-t border-l border-white/20">
+                          {totalImages}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0 border border-slate-200 dark:border-slate-700">
+                      <Tag className="w-5 h-5" />
+                    </div>
+                  )}
+
+                  {/* Info: Title, Category, Price */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1.5 mb-1">
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        {prod.kategori}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                        {formatRupiah(prod.harga)}
+                        <span className="text-[10px] text-slate-400 font-sans font-normal"> /{prod.satuan}</span>
+                      </span>
+                    </div>
+
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 leading-tight">
+                      {prod.nama_item}
+                    </h4>
+
+                    {prod.deskripsi && (
+                      <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                        {prod.deskripsi}
+                      </p>
+                    )}
+
+                    {totalImages > 1 && (
+                      <button
+                        onClick={() => handleOpenTableLightbox(prod)}
+                        className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 font-semibold hover:underline"
+                      >
+                        <Layers className="w-3 h-3" />
+                        {totalImages} Foto Galeri
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Vendor & Margin Box */}
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <Building2 className="w-3 h-3 text-slate-400" />
+                        <span>Vendor Supplier</span>
+                      </div>
+                      {defaultVendor ? (
+                        <div className="mt-0.5">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                            {defaultVendor.nama_vendor}
+                          </p>
+                          <button
+                            onClick={() => handleOpenVendorModal(prod)}
+                            className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                          >
+                            {vendorCount > 1 ? `${vendorCount} Vendor Terhubung` : "Kelola Vendor"}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleOpenVendorModal(prod)}
+                          className="mt-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" /> Hubungkan Vendor
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Margin Info on Mobile */}
+                    <div className="shrink-0 text-right">
+                      {renderMarginCell(prod)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer: Quick Status Toggles & Action Buttons */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                  {/* Status Badges / Toggles */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Tampil Publik Toggle */}
+                    <button
+                      onClick={() => handleToggle(prod.id, "tampilkan_harga_publik")}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border ${
+                        prod.tampilkan_harga_publik
+                          ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800"
+                          : "text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                      }`}
+                      title={prod.tampilkan_harga_publik ? "Harga publik ditampilkan" : "Harga publik disembunyikan"}
+                    >
+                      {prod.tampilkan_harga_publik ? <Eye className="w-3 h-3 text-emerald-600" /> : <EyeOff className="w-3 h-3" />}
+                      <span>{prod.tampilkan_harga_publik ? "Publik" : "Privat"}</span>
+                    </button>
+
+                    {/* Status Aktif Toggle */}
+                    <button
+                      onClick={() => handleToggle(prod.id, "is_active")}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border ${
+                        prod.is_active
+                          ? "text-blue-700 bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800"
+                          : "text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                      }`}
+                      title={prod.is_active ? "Produk Aktif" : "Produk Nonaktif"}
+                    >
+                      {prod.is_active ? <CheckCircle className="w-3 h-3 text-blue-600" /> : <XCircle className="w-3 h-3" />}
+                      <span>{prod.is_active ? "Aktif" : "Nonaktif"}</span>
+                    </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenVendorModal(prod)}
+                      className="p-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-slate-700"
+                      title="Kelola Vendor & Harga Modal"
+                    >
+                      <Building2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenEdit(prod)}
+                      className="p-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-slate-700"
+                      title="Edit Produk"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(prod.id, prod.nama_item)}
+                      className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors border border-rose-200 dark:border-rose-800/80"
+                      title="Hapus Produk"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+            Tidak ada produk ditemukan
+          </div>
+        )}
+      </div>
+
+      {/* 2. Desktop Products Table (hidden on mobile) */}
+      <div className="hidden md:block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-semibold uppercase text-slate-500">
               <tr>
                 <th className="py-3 px-4 w-16 text-center">Gambar</th>
                 <th className="py-3 px-4">Nama Produk & Deskripsi</th>
-                <th className="py-3 px-4">Kategori</th>
-                <th className="py-3 px-4">Satuan</th>
+                <th className="py-3 px-4">Kategori & Satuan</th>
                 <th className="py-3 px-4 text-right">Harga Resmi</th>
+                <th className="py-3 px-4">Vendor Utama</th>
+                <th className="py-3 px-4">Modal & Margin</th>
                 <th className="py-3 px-4 text-center">Tampil Publik</th>
                 <th className="py-3 px-4 text-center">Status Aktif</th>
                 <th className="py-3 px-4 text-right">Aksi</th>
@@ -441,6 +761,8 @@ export const AdminProducts: React.FC = () => {
                     : (prod.gambar_url ? [prod.gambar_url] : []);
                   const coverImg = prodImages[0] || prod.gambar_url;
                   const totalImages = prodImages.length;
+                  const defaultVendor = prod.default_vendor;
+                  const vendorCount = prod.vendor_count || (prod.product_vendors?.length ?? (defaultVendor ? 1 : 0));
 
                   return (
                     <tr key={prod.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
@@ -485,16 +807,55 @@ export const AdminProducts: React.FC = () => {
                         )}
                       </td>
                       <td className="py-3 px-4">
-                        <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          {prod.kategori}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-700 dark:text-slate-300">
-                        {prod.satuan}
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            {prod.kategori}
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-500">
+                            /{prod.satuan}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
                         {formatRupiah(prod.harga)}
                       </td>
+
+                      {/* Vendor Column */}
+                      <td className="py-3 px-4">
+                        {defaultVendor ? (
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 dark:text-white text-xs">
+                                {defaultVendor.nama_vendor}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleOpenVendorModal(prod)}
+                                className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                              >
+                                <Building2 className="w-3 h-3" />
+                                {vendorCount > 1 ? `${vendorCount} Vendor Terhubung` : "Kelola Vendor"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleOpenVendorModal(prod)}
+                            className="text-[11px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Building2 className="w-3.5 h-3.5" />
+                            <span>+ Hubungkan</span>
+                          </button>
+                        )}
+                      </td>
+
+                      {/* Modal & Margin Column */}
+                      <td className="py-3 px-4">
+                        {renderMarginCell(prod)}
+                      </td>
+
+                      {/* Tampil Publik Toggle */}
                       <td className="py-3 px-4 text-center">
                         <button
                           onClick={() => handleToggle(prod.id, "tampilkan_harga_publik")}
@@ -508,6 +869,8 @@ export const AdminProducts: React.FC = () => {
                           {prod.tampilkan_harga_publik ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                         </button>
                       </td>
+
+                      {/* Status Aktif Toggle */}
                       <td className="py-3 px-4 text-center">
                         <button
                           onClick={() => handleToggle(prod.id, "is_active")}
@@ -521,8 +884,18 @@ export const AdminProducts: React.FC = () => {
                           {prod.is_active ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
                         </button>
                       </td>
+
+                      {/* Action Buttons */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {/* Kelola Vendor Quick Action */}
+                          <button
+                            onClick={() => handleOpenVendorModal(prod)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
+                            title="Kelola Vendor & Harga Modal"
+                          >
+                            <Building2 className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => handleOpenEdit(prod)}
                             className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
@@ -544,7 +917,7 @@ export const AdminProducts: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                  <td colSpan={9} className="py-8 text-center text-slate-400">
                     Tidak ada produk ditemukan
                   </td>
                 </tr>
@@ -585,21 +958,58 @@ export const AdminProducts: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Kategori Item *
-                  </label>
-                  <select
-                    value={formData.kategori}
-                    onChange={(e) => setFormData({ ...formData, kategori: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500"
-                  >
-                    <option value="stiker">Stiker & Cutting</option>
-                    <option value="dtf">DTF & Sablon Kaos</option>
-                    <option value="banner">Banner & Spanduk</option>
-                    <option value="jersey">Jersey Custom</option>
-                    <option value="desain">Jasa Desain</option>
-                    <option value="lainnya">Nota / Lainnya</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Kategori Item *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomCategory(!isCustomCategory);
+                        if (isCustomCategory) {
+                          setCustomCategoryName("");
+                        }
+                      }}
+                      className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      {isCustomCategory ? "← Pilih Kategori" : "+ Kategori Baru"}
+                    </button>
+                  </div>
+
+                  {isCustomCategory ? (
+                    <input
+                      type="text"
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                      placeholder="Ketik kategori baru (cth: Sablon Topi, Box Packaging)"
+                      className="w-full px-3 py-2 rounded-lg bg-indigo-50/50 dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                      autoFocus
+                    />
+                  ) : (
+                    <select
+                      value={formData.kategori}
+                      onChange={(e) => {
+                        if (e.target.value === "__new__") {
+                          setIsCustomCategory(true);
+                          setCustomCategoryName("");
+                        } else {
+                          setFormData({ ...formData, kategori: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {categories
+                        .filter((c) => c.id !== "all")
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      <option value="__new__" className="text-indigo-600 dark:text-indigo-400 font-bold">
+                        + Tambah Kategori Baru...
+                      </option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -919,6 +1329,29 @@ export const AdminProducts: React.FC = () => {
         images={previewLightbox.images}
         title={previewLightbox.title}
         subtitle={previewLightbox.subtitle}
+      />
+
+      {/* Manage Product Vendors Modal */}
+      <ManageProductVendorsModal
+        product={selectedProductForVendor}
+        isOpen={vendorModalOpen}
+        onClose={() => {
+          setVendorModalOpen(false);
+          setSelectedProductForVendor(null);
+        }}
+        onUpdated={fetchProducts}
+        marginThresholds={marginThresholds}
+      />
+
+      {/* Margin Thresholds Settings Modal */}
+      <MarginThresholdModal
+        isOpen={thresholdModalOpen}
+        onClose={() => setThresholdModalOpen(false)}
+        currentSettings={marginThresholds}
+        onSaved={(newSettings) => {
+          setMarginThresholds(newSettings);
+          fetchProducts();
+        }}
       />
     </div>
   );

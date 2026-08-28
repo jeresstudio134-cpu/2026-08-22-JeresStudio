@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { DashboardStats, Order, StoreSettings } from "../../types/index.js";
 import { api } from "../../lib/api.js";
 import { formatRupiah, formatTanggal, getStatusBadge, getStatusBayarBadge } from "../../lib/utils.js";
-import { PrintDropdown } from "../../components/PrintDropdown.js";
+import { InvoicePDFButton } from "../../components/InvoicePDF.js";
 import {
   DollarSign,
   ShoppingBag,
@@ -380,17 +380,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Desktop Table View (>= 768px) */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[11px] font-bold">
+        <div className="hidden md:block w-full">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[10.5px] font-bold">
               <tr>
-                <th className="py-3.5 px-6">No. Nota</th>
-                <th className="py-3.5 px-6">Pelanggan</th>
-                <th className="py-3.5 px-6">Tanggal Order</th>
-                <th className="py-3.5 px-6">Status</th>
-                <th className="py-3.5 px-6">Pembayaran</th>
-                <th className="py-3.5 px-6 text-right">Total</th>
-                <th className="py-3.5 px-6 text-center">Cetak / Aksi</th>
+                <th className="py-2.5 px-3">No. Nota</th>
+                <th className="py-2.5 px-3">Pelanggan</th>
+                <th className="py-2.5 px-3">Tanggal Order</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3">Pembayaran</th>
+                <th className="py-2.5 px-3 text-right">Total</th>
+                <th className="py-2.5 px-3 text-center">Cetak / Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -401,21 +401,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-4 px-6 font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
+                      <td className="py-3 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
                         {order.nomor_nota}
                       </td>
-                      <td className="py-4 px-6">
+                      <td className="py-3 px-3">
                         <p className="font-semibold text-slate-900 dark:text-white text-xs">{order.nama_pelanggan}</p>
                         <p className="text-[11px] text-slate-500 font-mono">{order.no_wa}</p>
                       </td>
-                      <td className="py-4 px-6 text-slate-600 dark:text-slate-400 text-xs">
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-400 text-xs">
                         {formatTanggal(order.tanggal_order)}
                       </td>
-                      <td className="py-4 px-6">
+                      <td className="py-3 px-3">
                         <select
                           value={order.status}
                           onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}
-                          className={`text-xs font-bold px-3 py-1 rounded-full border-none focus:outline-none cursor-pointer ${statusBadge.bg}`}
+                          className={`text-[10.5px] font-bold px-2 py-0.5 rounded-md border-none focus:outline-none cursor-pointer ${statusBadge.bg}`}
                         >
                           <option value="pending">PENDING</option>
                           <option value="proses">PROSES</option>
@@ -423,16 +423,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <option value="dibatalkan">BATAL</option>
                         </select>
                       </td>
-                      <td className="py-4 px-6">
-                        <span className={`inline-block text-xs font-bold px-3 py-1 rounded-full ${bayarBadge.bg}`}>
+                      <td className="py-3 px-3">
+                        <span className={`inline-block text-[10.5px] font-bold px-2.5 py-0.5 rounded-md ${bayarBadge.bg}`}>
                           {bayarBadge.label}
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-right font-mono font-bold text-slate-900 dark:text-white text-xs">
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 dark:text-white text-xs">
                         {formatRupiah(order.total)}
                       </td>
-                      <td className="py-4 px-6 text-center">
-                        <PrintDropdown
+                      <td className="py-3 px-3 text-center">
+                        <InvoicePDFButton
                           order={order}
                           settings={settings}
                           variant="table"
@@ -500,10 +500,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </span>
                     </div>
 
-                    <PrintDropdown
+                    <InvoicePDFButton
                       order={order}
                       settings={settings}
-                      variant="button"
+                      variant="table"
                     />
                   </div>
                 </div>

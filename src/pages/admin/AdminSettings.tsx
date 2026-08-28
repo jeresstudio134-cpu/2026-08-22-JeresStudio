@@ -371,6 +371,18 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
     }
   };
 
+  if (user?.role !== "owner") {
+    return (
+      <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+        <Shield className="w-12 h-12 text-slate-400 mx-auto" />
+        <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">Akses Terbatas</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          Halaman Pengaturan & Staff hanya dapat diakses oleh Admin/Owner toko.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Header */}

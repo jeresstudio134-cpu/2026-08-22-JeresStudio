@@ -9,6 +9,7 @@ import { LandingPage } from "./pages/public/LandingPage.js";
 import { PublicPriceList } from "./pages/public/PublicPriceList.js";
 import { ContactPage } from "./pages/public/ContactPage.js";
 import { Footer } from "./pages/public/Footer.js";
+import { PublicTrackingPage } from "./pages/public/PublicTrackingPage.js";
 
 // Admin Pages
 import { AdminLogin } from "./pages/admin/AdminLogin.js";
@@ -16,9 +17,11 @@ import { AdminLayout } from "./pages/admin/AdminLayout.js";
 import { AdminDashboard } from "./pages/admin/AdminDashboard.js";
 import { AdminOrders } from "./pages/admin/AdminOrders.js";
 import { AdminProducts } from "./pages/admin/AdminProducts.js";
+import { AdminHppCalculator } from "./pages/admin/AdminHppCalculator.js";
 import { AdminVendors } from "./pages/admin/AdminVendors.js";
 import { AdminFinance } from "./pages/admin/AdminFinance.js";
 import { AdminSettings } from "./pages/admin/AdminSettings.js";
+import { AdminGuides } from "./pages/admin/AdminGuides.js";
 
 // Dedicated Print Page & Types
 import { DedicatedPrintPage } from "./pages/print/DedicatedPrintPage.js";
@@ -26,6 +29,31 @@ import { DocumentType } from "./components/print/PrintDocumentRenderer.js";
 
 // PDF Generator
 import { downloadInvoicePdf } from "./lib/generateInvoicePdf.js";
+
+function getInitialTrackRoute(): { isTrack: boolean; token: string | null } {
+  const path = window.location.pathname;
+  const hash = window.location.hash;
+  const search = new URLSearchParams(window.location.search);
+
+  // Check /track/:token
+  const pathMatch = path.match(/^\/track\/([a-zA-Z0-9_-]+)/);
+  if (pathMatch) {
+    return { isTrack: true, token: pathMatch[1] };
+  }
+
+  // Check hash #/track/:token or #track/:token
+  const hashMatch = hash.match(/^#\/?track\/([a-zA-Z0-9_-]+)/);
+  if (hashMatch) {
+    return { isTrack: true, token: hashMatch[1] };
+  }
+
+  // Check search params ?track=:token
+  if (search.get("track")) {
+    return { isTrack: true, token: search.get("track") };
+  }
+
+  return { isTrack: false, token: null };
+}
 
 function getInitialPrintRoute(): { isPrint: boolean; docType: DocumentType; orderId: string | null } {
   const path = window.location.pathname;
@@ -63,6 +91,8 @@ function MainApp() {
 
   // Print route state for dedicated print view
   const [printRoute, setPrintRoute] = useState(getInitialPrintRoute);
+  // Track route state for public order tracking (/track/:token)
+  const [trackRoute, setTrackRoute] = useState(getInitialTrackRoute);
 
   // Navigation state
   // 'public' or 'admin'
@@ -158,6 +188,13 @@ function MainApp() {
     }
   }, [isAuthenticated]);
 
+  // Restrict staff from accessing settings tab directly
+  useEffect(() => {
+    if (user && user.role === "staff" && adminTab === "settings") {
+      setAdminTab("dashboard");
+    }
+  }, [user, adminTab]);
+
   // Navigate handlers
   const handleOpenLogin = () => {
     setViewScope("admin");
@@ -172,6 +209,20 @@ function MainApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Listen to popstate and hashchange for URL updates
+  useEffect(() => {
+    const handleUrlChange = () => {
+      setPrintRoute(getInitialPrintRoute());
+      setTrackRoute(getInitialTrackRoute());
+    };
+    window.addEventListener("popstate", handleUrlChange);
+    window.addEventListener("hashchange", handleUrlChange);
+    return () => {
+      window.removeEventListener("popstate", handleUrlChange);
+      window.removeEventListener("hashchange", handleUrlChange);
+    };
+  }, []);
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white">
@@ -182,6 +233,19 @@ function MainApp() {
           </p>
         </div>
       </div>
+    );
+  }
+
+  // --- PUBLIC ORDER TRACKING ROUTE (/track/:token) ---
+  if (trackRoute.isTrack && trackRoute.token) {
+    return (
+      <PublicTrackingPage
+        token={trackRoute.token}
+        onNavigateHome={() => {
+          window.history.pushState({}, "", "/");
+          setTrackRoute({ isTrack: false, token: null });
+        }}
+      />
     );
   }
 
@@ -282,16 +346,20 @@ function MainApp() {
 
                 {adminTab === "products" && <AdminProducts />}
 
+                {adminTab === "calculator" && <AdminHppCalculator />}
+
                 {adminTab === "vendors" && <AdminVendors />}
 
                 {adminTab === "finance" && <AdminFinance settings={settings} />}
 
-                {adminTab === "settings" && (
+                {adminTab === "settings" && user?.role === "owner" && (
                   <AdminSettings
                     settings={settings}
                     onRefreshSettings={loadInitialData}
                   />
                 )}
+
+                {adminTab === "guides" && <AdminGuides />}
               </AdminLayout>
             )}
           </>

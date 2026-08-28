@@ -255,13 +255,13 @@ export const InvoiceDoc = forwardRef<HTMLDivElement, InvoiceDocProps>(
                     <td style={{ padding: "2.5px 5px", textAlign: "center", color: "#64748b", fontFamily: "monospace" }}>
                       {idx + 1}
                     </td>
-                    <td style={{ padding: "2.5px 5px" }}>
-                      <p style={{ fontWeight: 700, fontSize: "9.5px", margin: 0, color: "#0f172a" }}>
+                    <td style={{ padding: "3.5px 5px", textAlign: "left" }}>
+                      <p style={{ fontWeight: 700, fontSize: "9.5px", margin: 0, color: "#0f172a", textAlign: "left" }}>
                         {item.nama_item}
                       </p>
                       {item.catatan_item && (
-                        <p style={{ fontSize: "8px", color: "#64748b", fontStyle: "italic", margin: 0 }}>
-                          {item.catatan_item}
+                        <p style={{ fontSize: "7.5px", color: "#64748b", fontStyle: "italic", margin: "2px 0 0", textAlign: "left" }}>
+                          Catatan: {item.catatan_item}
                         </p>
                       )}
                     </td>
