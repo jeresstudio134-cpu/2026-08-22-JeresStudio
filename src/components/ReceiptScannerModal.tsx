@@ -616,8 +616,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                         <input
                           type="number"
                           required
-                          min="100"
-                          step="100"
+                          min="0"
+                          step="any"
                           placeholder="Contoh: 125000"
                           value={formAmount}
                           onChange={(e) => setFormAmount(e.target.value)}

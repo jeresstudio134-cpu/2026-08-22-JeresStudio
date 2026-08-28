@@ -1449,7 +1449,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       <input
                         type="number"
                         min="0"
-                        step="500"
+                        step="any"
                         placeholder="Rp 0"
                         value={allocModal}
                         onChange={(e) => setAllocModal(e.target.value)}
@@ -1465,7 +1465,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       <input
                         type="number"
                         min="0"
-                        step="500"
+                        step="any"
                         placeholder="Rp 0"
                         value={allocOverhead}
                         onChange={(e) => setAllocOverhead(e.target.value)}
@@ -1481,7 +1481,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       <input
                         type="number"
                         min="0"
-                        step="500"
+                        step="any"
                         placeholder="Rp 0"
                         value={allocGajiSaya}
                         onChange={(e) => setAllocGajiSaya(e.target.value)}
@@ -1497,7 +1497,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       <input
                         type="number"
                         min="0"
-                        step="500"
+                        step="any"
                         placeholder="Rp 0"
                         value={allocGajiKaryawan}
                         onChange={(e) => setAllocGajiKaryawan(e.target.value)}
@@ -1513,7 +1513,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       <input
                         type="number"
                         min="0"
-                        step="500"
+                        step="any"
                         placeholder="Rp 0"
                         value={allocMargin}
                         onChange={(e) => setAllocMargin(e.target.value)}
@@ -1532,7 +1532,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                     <input
                       type="number"
                       min="0"
-                      step="500"
+                      step="any"
                       placeholder="Rp 0 (opsional)"
                       value={allocDiskon}
                       onChange={(e) => setAllocDiskon(e.target.value)}
@@ -1804,8 +1804,8 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                       <input
                         type="number"
                         required
-                        min="100"
-                        step="500"
+                        min="0"
+                        step="any"
                         placeholder="Contoh: 150000"
                         value={formAmount}
                         onChange={(e) => setFormAmount(e.target.value)}

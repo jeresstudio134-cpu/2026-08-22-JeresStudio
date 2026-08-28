@@ -465,6 +465,15 @@ export const api = {
       method: "POST",
     }),
 
+  testGemini: () =>
+    request<{
+      success: boolean;
+      message: string;
+      sampleResponse?: string;
+    }>("/api/gemini/test", {
+      method: "POST",
+    }),
+
   // Integrations Status (Gemini, Resend, Cloudinary, Neon)
   getIntegrationsStatus: () =>
     request<{

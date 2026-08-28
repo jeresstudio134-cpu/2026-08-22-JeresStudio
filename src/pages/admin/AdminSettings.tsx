@@ -53,6 +53,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
   const [sqlCopied, setSqlCopied] = useState(false);
   const [testingCloudinary, setTestingCloudinary] = useState(false);
   const [cloudinaryNotice, setCloudinaryNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [testingGemini, setTestingGemini] = useState(false);
+  const [geminiNotice, setGeminiNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   // Store Profile Form
@@ -210,6 +212,33 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
       });
     } finally {
       setTestingCloudinary(false);
+    }
+  };
+
+  const handleTestGemini = async () => {
+    try {
+      setTestingGemini(true);
+      setGeminiNotice(null);
+      const res = await api.testGemini();
+      if (res.success) {
+        setGeminiNotice({
+          type: "success",
+          message: res.message + (res.sampleResponse ? ` (Respon: "${res.sampleResponse}")` : ""),
+        });
+        await fetchIntegrations();
+      } else {
+        setGeminiNotice({
+          type: "error",
+          message: res.message || "Gagal menguji koneksi Google Gemini AI.",
+        });
+      }
+    } catch (err: any) {
+      setGeminiNotice({
+        type: "error",
+        message: err.message || "Terjadi kesalahan saat menguji Google Gemini AI.",
+      });
+    } finally {
+      setTestingGemini(false);
     }
   };
 
@@ -1122,7 +1151,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                     <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
                       Google Gemini AI
                     </h4>
-                    <p className="text-[10px] text-slate-500 font-mono">GEMINI_API_KEY</p>
+                    <p className="text-[10px] text-slate-500 font-mono">GEMINI_API_KEY (gemini-3.7-flash)</p>
                   </div>
                 </div>
                 {integrationStatus?.gemini?.connected ? (
@@ -1136,10 +1165,39 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                 )}
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Mendukung fitur OCR Scanner Nota Struk Belanja & Bon Kulakan Supplier otomatis di Menu Kas & Keuangan.
+                Mendukung fitur OCR AI Smart Scanner Nota Struk Belanja & Bon Kulakan Supplier otomatis di Menu Kas & Keuangan.
               </p>
+
+              {geminiNotice && (
+                <div
+                  className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                    geminiNotice.type === "success"
+                      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                      : "bg-rose-50 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                  }`}
+                >
+                  {geminiNotice.type === "success" ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  )}
+                  <span>{geminiNotice.message}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={handleTestGemini}
+                  disabled={testingGemini}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingGemini ? "animate-spin" : ""}`} />
+                  {testingGemini ? "Menguji Koneksi..." : "🧪 Test Koneksi Gemini AI"}
+                </button>
+              </div>
+
               <div className="text-[11px] text-slate-500 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
-                <strong>Status:</strong> {integrationStatus?.gemini?.connected ? "Siap digunakan untuk ekstraksi struk instan." : "Tambahkan GEMINI_API_KEY di Settings platform."}
+                <strong>Status:</strong> {integrationStatus?.gemini?.connected ? "Kunci API aktif dan siap memindai nota struk belanja." : "Tambahkan GEMINI_API_KEY di Settings platform."}
               </div>
             </div>
 
