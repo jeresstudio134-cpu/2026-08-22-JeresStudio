@@ -221,6 +221,7 @@ export interface Transaction {
   metode_pembayaran: string; // 'Cash' | 'Transfer BCA' | 'Transfer Mandiri' | 'QRIS' | 'Lainnya'
   keterangan: string;
   referensi?: string; // e.g. "Nota INV-20250821-0001" or "Faktur Kulakan #1"
+  items?: ScannedReceiptItem[]; // Rincian item breakdown
   created_by?: string;
   created_at?: string;
   updated_at?: string;

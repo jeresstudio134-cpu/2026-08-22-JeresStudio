@@ -2629,7 +2629,7 @@ app.post("/api/gemini/test", authenticateToken, async (req: Request, res: Respon
 // Create Transaction (Single Pocket)
 app.post("/api/transactions", authenticateToken, (req: Request, res: Response) => {
   const currentUser = (req as any).user;
-  const { tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi } = req.body;
+  const { tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items } = req.body;
 
   if (!tipe || (tipe !== "masuk" && tipe !== "keluar")) {
     res.status(400).json({ error: "Tipe transaksi harus 'masuk' atau 'keluar'." });
@@ -2672,6 +2672,15 @@ app.post("/api/transactions", authenticateToken, (req: Request, res: Response) =
     ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
     : 1;
 
+  const validItems = Array.isArray(items)
+    ? items.map((it: any) => ({
+        nama_item: String(it.nama_item || "").trim(),
+        qty: Number(it.qty) || 1,
+        harga_satuan: Math.round(Number(it.harga_satuan) || 0),
+        subtotal: Math.round(Number(it.subtotal) || (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0)),
+      })).filter((it: any) => it.nama_item)
+    : undefined;
+
   const newTx = {
     id: newId,
     tipe,
@@ -2682,6 +2691,7 @@ app.post("/api/transactions", authenticateToken, (req: Request, res: Response) =
     metode_pembayaran: metode_pembayaran || "Cash",
     keterangan: keterangan.trim(),
     referensi: referensi ? referensi.trim() : "",
+    items: validItems,
     created_by: currentUser.nama || "Staff",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -2823,7 +2833,7 @@ app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response
     return;
   }
 
-  const { tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi } = req.body;
+  const { tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items } = req.body;
 
   if (nominal !== undefined && Number(nominal) <= 0) {
     res.status(400).json({ error: "Nominal harus lebih dari 0." });
@@ -2835,6 +2845,17 @@ app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response
   const targetKategori = kategori ? kategori.trim() : current.kategori;
   const targetKantong = kantong || current.kantong || inferKantongKas(targetKategori, targetTipe);
 
+  const validItems = items !== undefined
+    ? (Array.isArray(items)
+        ? items.map((it: any) => ({
+            nama_item: String(it.nama_item || "").trim(),
+            qty: Number(it.qty) || 1,
+            harga_satuan: Math.round(Number(it.harga_satuan) || 0),
+            subtotal: Math.round(Number(it.subtotal) || (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0)),
+          })).filter((it: any) => it.nama_item)
+        : [])
+    : current.items;
+
   memoryDb.transactions[index] = {
     ...current,
     tipe: targetTipe,
@@ -2845,6 +2866,7 @@ app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response
     metode_pembayaran: metode_pembayaran || current.metode_pembayaran,
     keterangan: keterangan !== undefined ? keterangan.trim() : current.keterangan,
     referensi: referensi !== undefined ? referensi.trim() : current.referensi,
+    items: validItems,
     updated_at: new Date().toISOString(),
   };
 

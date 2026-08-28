@@ -19,6 +19,9 @@ import {
   Receipt,
   Layers,
   HelpCircle,
+  Plus,
+  Trash2,
+  Calculator,
 } from "lucide-react";
 import { api } from "../lib/api.js";
 import { ScannedReceiptResult, ScannedReceiptItem } from "../types/index.js";
@@ -223,6 +226,66 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     }
   };
 
+  // Item Management (CRUD)
+  const handleAddItem = () => {
+    setFormItems((prev) => [
+      ...prev,
+      {
+        nama_item: "",
+        qty: 1,
+        harga_satuan: 0,
+        subtotal: 0,
+      },
+    ]);
+  };
+
+  const handleUpdateItem = (
+    index: number,
+    field: keyof ScannedReceiptItem,
+    value: string | number
+  ) => {
+    setFormItems((prev) => {
+      const updated = [...prev];
+      const current = { ...updated[index] };
+
+      if (field === "nama_item") {
+        current.nama_item = String(value);
+      } else if (field === "qty") {
+        const q = Number(value) || 0;
+        current.qty = q;
+        current.subtotal = Math.round(q * (current.harga_satuan || 0));
+      } else if (field === "harga_satuan") {
+        const h = Number(value) || 0;
+        current.harga_satuan = h;
+        current.subtotal = Math.round((current.qty || 1) * h);
+      } else if (field === "subtotal") {
+        const sub = Number(value) || 0;
+        current.subtotal = sub;
+        if (current.qty > 0) {
+          current.harga_satuan = Math.round(sub / current.qty);
+        }
+      }
+
+      updated[index] = current;
+      return updated;
+    });
+  };
+
+  const handleDeleteItem = (index: number) => {
+    setFormItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const itemsTotalSubtotal = formItems.reduce(
+    (sum, it) => sum + (Number(it.subtotal) || (Number(it.qty) || 0) * (Number(it.harga_satuan) || 0)),
+    0
+  );
+
+  const handleSyncNominalWithItems = () => {
+    if (itemsTotalSubtotal > 0) {
+      setFormAmount(itemsTotalSubtotal.toString());
+    }
+  };
+
   // Save Transaction to Finance
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,6 +310,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
     try {
       setIsSaving(true);
+      const cleanItems = formItems
+        .filter((it) => it.nama_item && it.nama_item.trim() !== "")
+        .map((it) => ({
+          nama_item: it.nama_item.trim(),
+          qty: Number(it.qty) || 1,
+          harga_satuan: Math.round(Number(it.harga_satuan) || 0),
+          subtotal: Math.round(Number(it.subtotal) || (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0)),
+        }));
+
       const payload = {
         tipe: formType,
         kategori: finalCategory,
@@ -256,6 +328,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         metode_pembayaran: formMethod,
         keterangan: formVendor ? `[${formVendor}] ${formDescription.trim()}` : formDescription.trim(),
         referensi: formReference.trim(),
+        items: cleanItems.length > 0 ? cleanItems : undefined,
       };
 
       await api.createTransaction(payload);
@@ -697,33 +770,157 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                     />
                   </div>
 
-                  {/* Itemized Breakdown Table if detected */}
-                  {formItems && formItems.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                        <span className="flex items-center gap-1">
-                          <Layers className="w-3 h-3 text-indigo-600" />
-                          Rincian Item yang Terbaca ({formItems.length} item)
-                        </span>
+                  {/* Itemized Breakdown Section with Full CRUD */}
+                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                        <Layers className="w-4 h-4 text-indigo-600" />
+                        <span>Rincian Item ({formItems.length} item)</span>
                       </div>
 
-                      <div className="max-h-28 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-2 space-y-1">
-                        {formItems.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-300 py-0.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0"
+                      <div className="flex items-center gap-2">
+                        {formItems.length > 0 && itemsTotalSubtotal > 0 && itemsTotalSubtotal !== Number(formAmount) && (
+                          <button
+                            type="button"
+                            onClick={handleSyncNominalWithItems}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 transition-colors cursor-pointer"
+                            title="Gunakan total subtotal rincian item sebagai Total Nominal transaksi"
                           >
-                            <span className="truncate max-w-[200px] font-medium">
-                              {item.nama_item} {item.qty > 1 ? `(${item.qty}x)` : ""}
-                            </span>
-                            <span className="font-mono text-slate-900 dark:text-white font-semibold">
-                              {formatRupiah(item.subtotal || item.harga_satuan * item.qty)}
-                            </span>
-                          </div>
-                        ))}
+                            <Calculator className="w-3 h-3 text-indigo-600" />
+                            <span>Samakan ke Total: {formatRupiah(itemsTotalSubtotal)}</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleAddItem}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Tambah Item</span>
+                        </button>
                       </div>
                     </div>
-                  )}
+
+                    {formItems.length === 0 ? (
+                      <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-center space-y-1.5">
+                        <p className="text-xs text-slate-500">
+                          Belum ada daftar rincian item yang tercatat.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleAddItem}
+                          className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          + Tambah Rincian Item Belanja / Jasa
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Items Table Container */}
+                        <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-2 space-y-2">
+                          <div className="grid grid-cols-12 gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                            <div className="col-span-5 sm:col-span-6">Nama Barang / Item</div>
+                            <div className="col-span-2 sm:col-span-2 text-center">Qty</div>
+                            <div className="col-span-2 sm:col-span-2 text-right">Harga (Rp)</div>
+                            <div className="col-span-2 sm:col-span-2 text-right">Subtotal</div>
+                            <div className="col-span-1 text-center"></div>
+                          </div>
+
+                          {formItems.map((item, idx) => (
+                            <div
+                              key={idx}
+                              className="grid grid-cols-12 gap-1.5 items-center bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs"
+                            >
+                              {/* Nama Item */}
+                              <div className="col-span-5 sm:col-span-6">
+                                <input
+                                  type="text"
+                                  placeholder="Nama item / barang"
+                                  value={item.nama_item}
+                                  onChange={(e) => handleUpdateItem(idx, "nama_item", e.target.value)}
+                                  className="w-full px-2 py-1 text-xs font-medium rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500"
+                                />
+                              </div>
+
+                              {/* Qty */}
+                              <div className="col-span-2 sm:col-span-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  placeholder="Qty"
+                                  value={item.qty}
+                                  onChange={(e) => handleUpdateItem(idx, "qty", e.target.value)}
+                                  className="w-full px-1.5 py-1 text-xs font-mono text-center rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                                />
+                              </div>
+
+                              {/* Harga Satuan */}
+                              <div className="col-span-2 sm:col-span-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  placeholder="Harga"
+                                  value={item.harga_satuan || ""}
+                                  onChange={(e) => handleUpdateItem(idx, "harga_satuan", e.target.value)}
+                                  className="w-full px-1.5 py-1 text-xs font-mono text-right rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                                />
+                              </div>
+
+                              {/* Subtotal */}
+                              <div className="col-span-2 sm:col-span-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  placeholder="Subtotal"
+                                  value={item.subtotal || ""}
+                                  onChange={(e) => handleUpdateItem(idx, "subtotal", e.target.value)}
+                                  className="w-full px-1.5 py-1 text-xs font-mono font-bold text-right rounded-md bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
+                                />
+                              </div>
+
+                              {/* Hapus Button */}
+                              <div className="col-span-1 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteItem(idx)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-colors cursor-pointer"
+                                  title="Hapus baris item ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Items Footer Summary */}
+                        <div className="flex flex-wrap items-center justify-between text-xs px-2 py-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <span className="text-slate-500 font-medium">
+                            Total {formItems.length} Rincian Item:
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              {formatRupiah(itemsTotalSubtotal)}
+                            </span>
+                            {itemsTotalSubtotal !== Number(formAmount) && (
+                              <button
+                                type="button"
+                                onClick={handleSyncNominalWithItems}
+                                className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold cursor-pointer"
+                              >
+                                (Gunakan sbg Total)
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Modal Action Buttons */}
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">

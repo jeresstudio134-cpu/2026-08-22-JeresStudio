@@ -36,6 +36,8 @@ import {
   Info,
   AlertTriangle,
   Coins,
+  Package,
+  Calculator,
 } from "lucide-react";
 import { api } from "../../lib/api.js";
 import {
@@ -46,6 +48,7 @@ import {
   KantongKasType,
   KantongBalances,
   HppBreakdown,
+  ScannedReceiptItem,
 } from "../../types/index.js";
 import { formatRupiah, formatTanggal } from "../../lib/utils.js";
 import { useAuth } from "../../lib/auth.js";
@@ -170,6 +173,67 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   const [formMethod, setFormMethod] = useState("Cash");
   const [formDescription, setFormDescription] = useState("");
   const [formReference, setFormReference] = useState("");
+  const [formItems, setFormItems] = useState<ScannedReceiptItem[]>([]);
+
+  // Item Management (CRUD) for Standard Modal
+  const handleAddItem = () => {
+    setFormItems((prev) => [
+      ...prev,
+      {
+        nama_item: "",
+        qty: 1,
+        harga_satuan: 0,
+        subtotal: 0,
+      },
+    ]);
+  };
+
+  const handleUpdateItem = (
+    index: number,
+    field: keyof ScannedReceiptItem,
+    value: string | number
+  ) => {
+    setFormItems((prev) => {
+      const updated = [...prev];
+      const current = { ...updated[index] };
+
+      if (field === "nama_item") {
+        current.nama_item = String(value);
+      } else if (field === "qty") {
+        const q = Number(value) || 0;
+        current.qty = q;
+        current.subtotal = Math.round(q * (current.harga_satuan || 0));
+      } else if (field === "harga_satuan") {
+        const h = Number(value) || 0;
+        current.harga_satuan = h;
+        current.subtotal = Math.round((current.qty || 1) * h);
+      } else if (field === "subtotal") {
+        const sub = Number(value) || 0;
+        current.subtotal = sub;
+        if (current.qty > 0) {
+          current.harga_satuan = Math.round(sub / current.qty);
+        }
+      }
+
+      updated[index] = current;
+      return updated;
+    });
+  };
+
+  const handleDeleteItem = (index: number) => {
+    setFormItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const itemsTotalSubtotal = formItems.reduce(
+    (sum, it) => sum + (Number(it.subtotal) || (Number(it.qty) || 0) * (Number(it.harga_satuan) || 0)),
+    0
+  );
+
+  const handleSyncNominalWithItems = () => {
+    if (itemsTotalSubtotal > 0) {
+      setFormAmount(itemsTotalSubtotal.toString());
+    }
+  };
 
   // Auto Allocate Form State (5 Kantong HPP Splitting)
   const [allocOrderRef, setAllocOrderRef] = useState("");
@@ -284,6 +348,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     setFormMethod("Cash");
     setFormDescription("");
     setFormReference("");
+    setFormItems([]);
     setErrorMessage("");
     setModalOpen(true);
   };
@@ -304,6 +369,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     setAllocMethod("Cash");
     setAllocDate(new Date().toISOString().slice(0, 10));
     setAllocDesc("Alokasi kas order cetak sesuai HPP");
+    setFormItems([]);
     setErrorMessage("");
     setModalOpen(true);
   };
@@ -321,6 +387,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     setFormMethod(tx.metode_pembayaran || "Cash");
     setFormDescription(tx.keterangan || "");
     setFormReference(tx.referensi || "");
+    setFormItems(tx.items && Array.isArray(tx.items) ? JSON.parse(JSON.stringify(tx.items)) : []);
     setErrorMessage("");
     setModalOpen(true);
   };
@@ -420,6 +487,15 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
     try {
       setSubmitting(true);
+      const cleanItems = formItems
+        .filter((it) => it.nama_item && it.nama_item.trim() !== "")
+        .map((it) => ({
+          nama_item: it.nama_item.trim(),
+          qty: Number(it.qty) || 1,
+          harga_satuan: Math.round(Number(it.harga_satuan) || 0),
+          subtotal: Math.round(Number(it.subtotal) || (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0)),
+        }));
+
       const payload = {
         tipe: formType,
         kantong: formKantong,
@@ -429,6 +505,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         metode_pembayaran: formMethod,
         keterangan: formDescription.trim(),
         referensi: formReference.trim(),
+        items: cleanItems.length > 0 ? cleanItems : undefined,
       };
 
       if (editingTransaction) {
@@ -1215,6 +1292,14 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                                 Ref: {tx.referensi}
                               </span>
                             )}
+
+                            {/* Item Count Badge */}
+                            {tx.items && tx.items.length > 0 && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                <Package className="w-2.5 h-2.5" />
+                                {tx.items.length} item
+                              </span>
+                            )}
                           </div>
 
                           {/* Subtext: Tanggal, Jam, Metode & Kasir */}
@@ -1325,6 +1410,41 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                               </span>
                             </div>
                           </div>
+
+                          {/* Itemized Breakdown if exists */}
+                          {tx.items && tx.items.length > 0 && (
+                            <div className="space-y-1.5 pt-1">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                                <Package className="w-3 h-3 text-indigo-600" />
+                                Rincian Item Transaksi ({tx.items.length} item)
+                              </span>
+                              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+                                {tx.items.map((item, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="p-2 flex items-center justify-between text-[11px]"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-mono flex items-center justify-center text-slate-500 font-bold">
+                                        {idx + 1}
+                                      </span>
+                                      <span className="font-medium text-slate-900 dark:text-white">
+                                        {item.nama_item}
+                                      </span>
+                                      {item.qty > 1 && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
+                                          x{item.qty} @ {formatRupiah(item.harga_satuan)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                                      {formatRupiah(item.subtotal || item.harga_satuan * item.qty)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1879,6 +1999,144 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                     onChange={(e) => setFormDescription(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                   />
+                </div>
+
+                {/* Rincian Item (CRUD) */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Package className="w-4 h-4 text-indigo-600" />
+                      <span className="font-bold text-xs text-slate-900 dark:text-white">
+                        Rincian Item / Nota ({formItems.length})
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        (Opsional)
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddItem}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Tambah Item
+                    </button>
+                  </div>
+
+                  {formItems.length > 0 ? (
+                    <div className="space-y-2 pt-1">
+                      <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                        {formItems.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1.5"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono text-[10px] flex items-center justify-center font-bold shrink-0">
+                                {idx + 1}
+                              </span>
+                              <input
+                                type="text"
+                                placeholder="Nama barang / jasa (cth: Banner Flexi 280gr)"
+                                value={item.nama_item}
+                                onChange={(e) =>
+                                  handleUpdateItem(idx, "nama_item", e.target.value)
+                                }
+                                className="flex-1 px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteItem(idx)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-colors cursor-pointer shrink-0"
+                                title="Hapus item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 text-[11px] pl-7">
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-0.5">
+                                  Qty
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={item.qty || ""}
+                                  onChange={(e) =>
+                                    handleUpdateItem(idx, "qty", e.target.value)
+                                  }
+                                  placeholder="1"
+                                  className="w-full px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-0.5">
+                                  Harga Satuan
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={item.harga_satuan || ""}
+                                  onChange={(e) =>
+                                    handleUpdateItem(idx, "harga_satuan", e.target.value)
+                                  }
+                                  placeholder="0"
+                                  className="w-full px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-0.5">
+                                  Subtotal
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={item.subtotal || ""}
+                                  onChange={(e) =>
+                                    handleUpdateItem(idx, "subtotal", e.target.value)
+                                  }
+                                  placeholder="0"
+                                  className="w-full px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Total Item Subtotal & Samakan Button */}
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 text-xs">
+                        <div>
+                          <span className="text-[11px] text-indigo-900 dark:text-indigo-200 font-medium">
+                            Total Rincian:{" "}
+                          </span>
+                          <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                            {formatRupiah(itemsTotalSubtotal)}
+                          </span>
+                        </div>
+                        {itemsTotalSubtotal > 0 &&
+                          itemsTotalSubtotal !== Number(formAmount) && (
+                            <button
+                              type="button"
+                              onClick={handleSyncNominalWithItems}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-md bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer"
+                            >
+                              <Calculator className="w-3 h-3" />
+                              Samakan ke Nominal
+                            </button>
+                          )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic py-1 text-center">
+                      Belum ada rincian item. Klik "+ Tambah Item" jika ingin mencatat rincian per barang.
+                    </p>
+                  )}
                 </div>
 
                 {/* Actions */}
