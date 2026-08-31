@@ -381,7 +381,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="w-full max-w-5xl xl:max-w-6xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-indigo-50/70 via-purple-50/50 to-white dark:from-indigo-950/30 dark:via-purple-950/20 dark:to-slate-900">
           <div className="flex items-center gap-3">
@@ -511,8 +511,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
           ) : (
             /* Split View: Photo Preview + AI Extracted Form */
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Column: Image Preview & Scan Progress (5 cols) */}
-              <div className="lg:col-span-5 space-y-3">
+              {/* Left Column: Image Preview & Scan Progress (4 cols) */}
+              <div className="lg:col-span-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                     <Receipt className="w-3.5 h-3.5 text-indigo-600" />
@@ -591,8 +591,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                 )}
               </div>
 
-              {/* Right Column: AI Extracted Verification Form (7 cols) */}
-              <div className="lg:col-span-7 space-y-4">
+              {/* Right Column: AI Extracted Verification Form (8 cols) */}
+              <div className="lg:col-span-8 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -855,33 +855,33 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                     ) : (
                       <div className="space-y-2">
                         {/* Items Table Container */}
-                        <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-2 space-y-2">
-                          <div className="grid grid-cols-12 gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                            <div className="col-span-5 sm:col-span-6">Nama Barang / Item</div>
-                            <div className="col-span-2 sm:col-span-2 text-center">Qty</div>
-                            <div className="col-span-2 sm:col-span-2 text-right">Harga (Rp)</div>
-                            <div className="col-span-2 sm:col-span-2 text-right">Subtotal</div>
-                            <div className="col-span-1 text-center"></div>
+                        <div className="max-h-60 overflow-y-auto overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-2.5 space-y-2">
+                          <div className="min-w-[460px] grid grid-cols-[1fr_56px_110px_125px_32px] sm:grid-cols-[1fr_64px_130px_140px_36px] gap-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                            <div>Nama Barang / Item</div>
+                            <div className="text-center">Qty</div>
+                            <div className="text-right">Harga (Rp)</div>
+                            <div className="text-right">Subtotal</div>
+                            <div className="text-center"></div>
                           </div>
 
                           {formItems.map((item, idx) => (
                             <div
                               key={idx}
-                              className="grid grid-cols-12 gap-1.5 items-center bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs"
+                              className="min-w-[460px] grid grid-cols-[1fr_56px_110px_125px_32px] sm:grid-cols-[1fr_64px_130px_140px_36px] gap-2.5 items-center bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs"
                             >
                               {/* Nama Item */}
-                              <div className="col-span-5 sm:col-span-6">
+                              <div className="min-w-0">
                                 <input
                                   type="text"
                                   placeholder="Nama item / barang"
                                   value={item.nama_item}
                                   onChange={(e) => handleUpdateItem(idx, "nama_item", e.target.value)}
-                                  className="w-full px-2 py-1 text-xs font-medium rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500"
+                                  className="w-full px-2.5 py-1.5 text-xs font-medium rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500"
                                 />
                               </div>
 
                               {/* Qty */}
-                              <div className="col-span-2 sm:col-span-2">
+                              <div>
                                 <input
                                   type="number"
                                   min="0"
@@ -889,12 +889,12 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                                   placeholder="Qty"
                                   value={item.qty}
                                   onChange={(e) => handleUpdateItem(idx, "qty", e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs font-mono text-center rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                                  className="w-full px-1.5 py-1.5 text-xs font-mono text-center rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </div>
 
                               {/* Harga Satuan */}
-                              <div className="col-span-2 sm:col-span-2">
+                              <div>
                                 <input
                                   type="number"
                                   min="0"
@@ -902,12 +902,12 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                                   placeholder="Harga"
                                   value={item.harga_satuan || ""}
                                   onChange={(e) => handleUpdateItem(idx, "harga_satuan", e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs font-mono text-right rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono text-right rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </div>
 
                               {/* Subtotal */}
-                              <div className="col-span-2 sm:col-span-2">
+                              <div>
                                 <input
                                   type="number"
                                   min="0"
@@ -915,19 +915,19 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                                   placeholder="Subtotal"
                                   value={item.subtotal || ""}
                                   onChange={(e) => handleUpdateItem(idx, "subtotal", e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs font-mono font-bold text-right rounded-md bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono font-bold text-right rounded-md bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </div>
 
                               {/* Hapus Button */}
-                              <div className="col-span-1 text-center">
+                              <div className="text-center flex justify-center">
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteItem(idx)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-colors cursor-pointer"
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
                                   title="Hapus baris item ini"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>

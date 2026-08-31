@@ -2120,7 +2120,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-2 text-[11px] pl-7">
+                            <div className="grid grid-cols-3 gap-2.5 text-[11px] pl-7">
                               <div>
                                 <label className="block text-[10px] text-slate-400 font-semibold mb-0.5">
                                   Qty
@@ -2134,7 +2134,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                                     handleUpdateItem(idx, "qty", e.target.value)
                                   }
                                   placeholder="1"
-                                  className="w-full px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                                  className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </div>
                               <div>
@@ -2150,7 +2150,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                                     handleUpdateItem(idx, "harga_satuan", e.target.value)
                                   }
                                   placeholder="0"
-                                  className="w-full px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                                  className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </div>
                               <div>
@@ -2166,7 +2166,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                                     handleUpdateItem(idx, "subtotal", e.target.value)
                                   }
                                   placeholder="0"
-                                  className="w-full px-2 py-1 text-xs rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
+                                  className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </div>
                             </div>
