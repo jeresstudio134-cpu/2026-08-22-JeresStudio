@@ -725,8 +725,8 @@ export async function persistStoreSettings(s: any) {
         id, nama_toko, slogan, alamat, no_wa, email, logo_url, rekening_bank, 
         catatan_nota, margin_threshold_good, margin_threshold_warning, updated_at
       ) VALUES (
-        1, ${s.nama_toko}, ${s.slogan}, ${s.alamat}, ${s.no_wa}, ${s.email}, 
-        ${s.logo_url || ''}, ${s.rekening_bank}, ${s.catatan_nota}, 
+        1, ${s.nama_toko || 'Jeres Studio'}, ${s.slogan || ''}, ${s.alamat || ''}, ${s.no_wa || ''}, ${s.email || ''}, 
+        ${s.logo_url || ''}, ${s.rekening_bank || ''}, ${s.catatan_nota || ''}, 
         ${s.margin_threshold_good || '20'}, ${s.margin_threshold_warning || '10'}, ${new Date()}
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -742,6 +742,7 @@ export async function persistStoreSettings(s: any) {
         margin_threshold_warning = EXCLUDED.margin_threshold_warning,
         updated_at = NOW();
     `;
+    console.log("✓ Pengaturan toko & URL Logo berhasil tersimpan permanen ke Neon PostgreSQL.");
   } catch (e) {
     console.error("Error persisting store settings to Neon:", e);
   }

@@ -47,7 +47,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "jeres-studio-secret-key-super-secu
 let isTablesInitialized = false;
 let initPromise: Promise<any> | null = null;
 
-function ensureTablesInitialized() {
+async function ensureTablesInitializedAsync(): Promise<void> {
   if (isTablesInitialized) return;
   if (!initPromise) {
     initPromise = initNeonTables()
@@ -62,11 +62,18 @@ function ensureTablesInitialized() {
         initPromise = null;
       });
   }
+  await initPromise;
 }
 
 // Middleware to ensure Neon tables exist on first serverless invocation
-app.use((req: Request, res: Response, next: NextFunction) => {
-  ensureTablesInitialized();
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  if (!isTablesInitialized) {
+    try {
+      await ensureTablesInitializedAsync();
+    } catch {
+      // Proceed even if init encountered transient error
+    }
+  }
   next();
 });
 
@@ -3104,12 +3111,27 @@ app.get("/api/dashboard/stats", authenticateToken, (req: Request, res: Response)
 ======================================================== */
 
 // Get Store Settings (Public & Admin)
-app.get("/api/settings", (req: Request, res: Response) => {
+app.get("/api/settings", async (req: Request, res: Response) => {
+  const sql = getNeonSql();
+  if (sql) {
+    try {
+      const st = await sql`SELECT * FROM store_settings WHERE id = 1 LIMIT 1`;
+      if (st.length > 0) {
+        memoryDb.storeSettings = {
+          ...memoryDb.storeSettings,
+          ...st[0],
+          updated_at: st[0].updated_at ? new Date(st[0].updated_at).toISOString() : new Date().toISOString(),
+        };
+      }
+    } catch (e) {
+      // fallback to memoryDb.storeSettings
+    }
+  }
   res.json({ settings: memoryDb.storeSettings });
 });
 
 // Update Store Settings
-app.put("/api/settings", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/settings", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   if (currentUser.role !== "owner") {
     res.status(403).json({ error: "Hanya Admin/Owner yang dapat mengubah pengaturan toko." });
@@ -3132,7 +3154,11 @@ app.put("/api/settings", authenticateToken, (req: Request, res: Response) => {
   };
 
   logActivity(currentUser.nama, "Update Pengaturan Toko", "Memperbarui profil dan format nota toko");
-  persistStoreSettings(memoryDb.storeSettings).catch(() => {});
+  try {
+    await persistStoreSettings(memoryDb.storeSettings);
+  } catch (err) {
+    console.error("Error saving store settings to Neon:", err);
+  }
   res.json({ message: "Pengaturan toko berhasil disimpan", settings: memoryDb.storeSettings });
 });
 
