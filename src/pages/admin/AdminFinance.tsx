@@ -1260,8 +1260,8 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
               <span className="text-[11px] text-slate-400">Klik baris untuk rincian</span>
             </div>
 
-            {/* Rows */}
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {/* Rows with scroll container for 5 visible items */}
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[345px] sm:max-h-[355px] overflow-y-auto">
               {displayedTransactions.length > 0 ? (
                 displayedTransactions.map((tx) => {
                   const isIncome = tx.tipe === "masuk";
