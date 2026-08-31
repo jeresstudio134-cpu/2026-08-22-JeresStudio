@@ -439,6 +439,11 @@ export const api = {
       method: "POST",
     }),
 
+  syncDatabase: () =>
+    request<{ success: boolean; message: string; counts?: any }>("/api/db/sync", {
+      method: "POST",
+    }),
+
   // Image Uploading & Cloud Hosting (Cloudinary / Local)
   uploadImage: (dataUrl: string, filename?: string) =>
     request<{

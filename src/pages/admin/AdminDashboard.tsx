@@ -153,85 +153,85 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* KPI Cards Grid: 2 cols on mobile (2x2), 4 cols on tablet & desktop (4x1) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
         {/* Total Omzet */}
-        <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <div className="p-3.5 sm:p-5 md:p-6 bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 sm:space-y-2 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
               Omzet Bulan Ini
             </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <DollarSign className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+              <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight truncate">
               {formatRupiah(stats?.totalOmzetBulanIni || 0)}
             </h3>
-            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Dari {stats?.totalOrderBulanIni || 0} transaksi bulan ini</span>
+            <p className="text-[10px] sm:text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-0.5 sm:mt-1 flex items-center gap-1 truncate">
+              <TrendingUp className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+              <span className="truncate">Dari {stats?.totalOrderBulanIni || 0} transaksi</span>
             </p>
           </div>
         </div>
 
         {/* Order Pending */}
-        <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <div className="p-3.5 sm:p-5 md:p-6 bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 sm:space-y-2 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
               Order Pending
             </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <Clock className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
               {stats?.orderPending || 0}
             </h3>
-            <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mt-1">
-              Menunggu antrian / ACC desain
+            <p className="text-[10px] sm:text-xs font-medium text-blue-600 dark:text-blue-400 mt-0.5 sm:mt-1 truncate">
+              Menunggu antrian / ACC
             </p>
           </div>
         </div>
 
         {/* Order Dalam Proses */}
-        <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <div className="p-3.5 sm:p-5 md:p-6 bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 sm:space-y-2 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
               Sedang Diproduksi
             </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <Layers className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
               {stats?.orderProses || 0}
             </h3>
-            <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1">
-              Dalam mesin cetak & finishing
+            <p className="text-[10px] sm:text-xs font-medium text-amber-600 dark:text-amber-400 mt-0.5 sm:mt-1 truncate">
+              Mesin cetak & finishing
             </p>
           </div>
         </div>
 
         {/* Order Selesai */}
-        <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <div className="p-3.5 sm:p-5 md:p-6 bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 sm:space-y-2 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
               Order Selesai
             </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+              <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
               {stats?.orderSelesai || 0}
             </h3>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
-              Siap diambil / sudah diserahkan
+            <p className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1 truncate">
+              Siap diambil / diserahkan
             </p>
           </div>
         </div>

@@ -235,15 +235,18 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
 
     console.log("✓ Semua 12 tabel berhasil diverifikasi & dibuat di Neon PostgreSQL.");
 
-    // Auto-seed initial data if empty
+    // Auto-seed initial data ONLY if tables are completely empty
     await autoSeedIfEmpty(sql);
 
-    // Sync from Neon into memory store for fast startup
+    // Sync all existing data from Neon directly into memory store
     await syncFromNeonToMemory(sql);
+
+    // Auto repair postgres ID sequences to prevent collision with existing records
+    await repairPostgresSequences(sql);
 
     return {
       success: true,
-      message: "Tabel dan skema Neon PostgreSQL berhasil diinisialisasi & disinkronkan.",
+      message: "Tabel dan skema Neon PostgreSQL berhasil diinisialisasi & disinkronkan dengan data database Neon.",
       tableCount: 12,
     };
   } catch (err: any) {
@@ -256,7 +259,37 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
   }
 }
 
-// 2. Auto-Seed Initial Data if Tables are Empty
+// Helper to auto-repair PostgreSQL serial sequences based on existing MAX(id)
+export async function repairPostgresSequences(sql: any) {
+  if (!sql) return;
+  const tables = [
+    "admin_users",
+    "products",
+    "orders",
+    "order_items",
+    "vendors",
+    "product_vendors",
+    "purchase_history",
+    "activity_logs",
+    "guides",
+    "categories",
+    "transactions",
+  ];
+  for (const tbl of tables) {
+    try {
+      await sql`
+        SELECT setval(
+          pg_get_serial_sequence(${tbl}, 'id'),
+          COALESCE((SELECT MAX(id) FROM ${sql(tbl)}), 1)
+        );
+      `;
+    } catch {
+      // Ignore if table or sequence doesn't support setval
+    }
+  }
+}
+
+// 2. Auto-Seed Initial Data ONLY if Tables are completely Empty
 async function autoSeedIfEmpty(sql: any) {
   try {
     // Check admin_users
@@ -339,7 +372,7 @@ async function autoSeedIfEmpty(sql: any) {
   }
 }
 
-// 3. Sync from Neon into memoryDb Cache
+// 3. Sync from Neon directly into memoryDb Cache
 export async function syncFromNeonToMemory(sql: any) {
   try {
     const users = await sql`SELECT * FROM admin_users ORDER BY id ASC`;
@@ -351,55 +384,49 @@ export async function syncFromNeonToMemory(sql: any) {
     }
 
     const prods = await sql`SELECT * FROM products ORDER BY id ASC`;
-    if (prods.length > 0) {
-      memoryDb.products = prods.map((p: any) => {
-        let imgs: string[] = [];
-        try {
-          imgs = p.images ? JSON.parse(p.images) : [];
-        } catch {
-          imgs = p.gambar_url ? [p.gambar_url] : [];
-        }
-        return {
-          ...p,
-          images: Array.isArray(imgs) ? imgs : [],
-          created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
-          updated_at: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
-        };
-      });
-    }
+    memoryDb.products = prods.map((p: any) => {
+      let imgs: string[] = [];
+      try {
+        imgs = p.images ? JSON.parse(p.images) : [];
+      } catch {
+        imgs = p.gambar_url ? [p.gambar_url] : [];
+      }
+      return {
+        ...p,
+        images: Array.isArray(imgs) ? imgs : [],
+        created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+        updated_at: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
+      };
+    });
 
     const ords = await sql`SELECT * FROM orders ORDER BY id DESC`;
-    if (ords.length > 0) {
-      memoryDb.orders = ords.map((o: any) => {
-        let progNotes: any[] = [];
-        try {
-          progNotes = o.progress_notes ? JSON.parse(o.progress_notes) : [];
-        } catch {
-          progNotes = [];
-        }
-        return {
-          ...o,
-          progress_notes: progNotes,
-          tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
-          tanggal_ambil: o.tanggal_ambil ? new Date(o.tanggal_ambil).toISOString() : null,
-          share_expires_at: o.share_expires_at ? new Date(o.share_expires_at).toISOString() : null,
-          created_at: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
-          updated_at: o.updated_at ? new Date(o.updated_at).toISOString() : new Date().toISOString(),
-        };
-      });
-    }
+    memoryDb.orders = ords.map((o: any) => {
+      let progNotes: any[] = [];
+      try {
+        progNotes = o.progress_notes ? JSON.parse(o.progress_notes) : [];
+      } catch {
+        progNotes = [];
+      }
+      return {
+        ...o,
+        progress_notes: progNotes,
+        tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
+        tanggal_ambil: o.tanggal_ambil ? new Date(o.tanggal_ambil).toISOString() : null,
+        share_expires_at: o.share_expires_at ? new Date(o.share_expires_at).toISOString() : null,
+        created_at: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
+        updated_at: o.updated_at ? new Date(o.updated_at).toISOString() : new Date().toISOString(),
+      };
+    });
 
     const items = await sql`SELECT * FROM order_items ORDER BY id ASC`;
-    if (items.length > 0) {
-      memoryDb.orderItems = items.map((i: any) => ({
-        ...i,
-        qty: Number(i.qty),
-        harga_satuan: Number(i.harga_satuan),
-        subtotal: Number(i.subtotal),
-        panjang: i.panjang !== null ? Number(i.panjang) : null,
-        lebar: i.lebar !== null ? Number(i.lebar) : null,
-      }));
-    }
+    memoryDb.orderItems = items.map((i: any) => ({
+      ...i,
+      qty: Number(i.qty),
+      harga_satuan: Number(i.harga_satuan),
+      subtotal: Number(i.subtotal),
+      panjang: i.panjang !== null ? Number(i.panjang) : null,
+      lebar: i.lebar !== null ? Number(i.lebar) : null,
+    }));
 
     const st = await sql`SELECT * FROM store_settings WHERE id = 1 LIMIT 1`;
     if (st.length > 0) {
@@ -410,33 +437,27 @@ export async function syncFromNeonToMemory(sql: any) {
     }
 
     const vens = await sql`SELECT * FROM vendors ORDER BY id ASC`;
-    if (vens.length > 0) {
-      memoryDb.vendors = vens.map((v: any) => ({
-        ...v,
-        created_at: v.created_at ? new Date(v.created_at).toISOString() : new Date().toISOString(),
-        updated_at: v.updated_at ? new Date(v.updated_at).toISOString() : new Date().toISOString(),
-      }));
-    }
+    memoryDb.vendors = vens.map((v: any) => ({
+      ...v,
+      created_at: v.created_at ? new Date(v.created_at).toISOString() : new Date().toISOString(),
+      updated_at: v.updated_at ? new Date(v.updated_at).toISOString() : new Date().toISOString(),
+    }));
 
     const pvs = await sql`SELECT * FROM product_vendors ORDER BY id ASC`;
-    if (pvs.length > 0) {
-      memoryDb.product_vendors = pvs.map((pv: any) => ({
-        ...pv,
-        created_at: pv.created_at ? new Date(pv.created_at).toISOString() : new Date().toISOString(),
-        updated_at: pv.updated_at ? new Date(pv.updated_at).toISOString() : new Date().toISOString(),
-      }));
-    }
+    memoryDb.product_vendors = pvs.map((pv: any) => ({
+      ...pv,
+      created_at: pv.created_at ? new Date(pv.created_at).toISOString() : new Date().toISOString(),
+      updated_at: pv.updated_at ? new Date(pv.updated_at).toISOString() : new Date().toISOString(),
+    }));
 
     const txs = await sql`SELECT * FROM transactions ORDER BY id DESC`;
-    if (txs.length > 0) {
-      memoryDb.transactions = txs.map((t: any) => ({
-        ...t,
-        nominal: Number(t.nominal),
-        tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
-        created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
-        updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
-      }));
-    }
+    memoryDb.transactions = txs.map((t: any) => ({
+      ...t,
+      nominal: Number(t.nominal),
+      tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
+      created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+      updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+    }));
 
     const cats = await sql`SELECT * FROM categories ORDER BY id ASC`;
     if (cats.length > 0) {
@@ -455,7 +476,17 @@ export async function syncFromNeonToMemory(sql: any) {
       }));
     }
 
-    console.log("✓ Data dari Neon PostgreSQL berhasil disinkronkan ke memori server.");
+    const purchases = await sql`SELECT * FROM purchase_history ORDER BY id DESC`;
+    memoryDb.purchaseHistory = purchases.map((p: any) => ({
+      ...p,
+      qty: Number(p.qty),
+      harga_satuan: Number(p.harga_satuan),
+      total: Number(p.total),
+      tanggal: p.tanggal ? new Date(p.tanggal).toISOString() : new Date().toISOString(),
+      created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+    }));
+
+    console.log("✓ Data dari database Neon PostgreSQL berhasil disinkronkan secara presisi ke memori server.");
   } catch (err) {
     console.error("Gagal sinkronisasi data dari Neon:", err);
   }
@@ -866,3 +897,69 @@ export async function persistActivityLog(log: any) {
     // Non-critical, ignore
   }
 }
+
+export async function persistCategory(c: any) {
+  const sql = getNeonSql();
+  if (!sql) return;
+  try {
+    if (c.id && typeof c.id === "number") {
+      await sql`
+        INSERT INTO categories (id, name, type, created_at)
+        VALUES (${c.id}, ${c.name}, ${c.type || 'masuk'}, ${new Date(c.created_at || Date.now())})
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          type = EXCLUDED.type;
+      `;
+    }
+  } catch (e) {
+    console.error("Error persisting category to Neon:", e);
+  }
+}
+
+export async function persistDeleteCategory(id: number) {
+  const sql = getNeonSql();
+  if (!sql) return;
+  try {
+    await sql`DELETE FROM categories WHERE id = ${id}`;
+  } catch (e) {
+    console.error("Error deleting category from Neon:", e);
+  }
+}
+
+export async function persistPurchase(p: any) {
+  const sql = getNeonSql();
+  if (!sql) return;
+  try {
+    const tanggal = p.tanggal ? new Date(p.tanggal) : new Date();
+    await sql`
+      INSERT INTO purchase_history (
+        id, vendor_id, tanggal, nama_barang, qty, satuan, harga_satuan, total, catatan, created_at
+      ) VALUES (
+        ${p.id}, ${p.vendor_id}, ${tanggal}, ${p.nama_barang}, ${p.qty || 1}, 
+        ${p.satuan || 'pcs'}, ${p.harga_satuan || 0}, ${p.total || 0}, ${p.catatan || ''}, ${new Date(p.created_at || Date.now())}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        vendor_id = EXCLUDED.vendor_id,
+        tanggal = EXCLUDED.tanggal,
+        nama_barang = EXCLUDED.nama_barang,
+        qty = EXCLUDED.qty,
+        satuan = EXCLUDED.satuan,
+        harga_satuan = EXCLUDED.harga_satuan,
+        total = EXCLUDED.total,
+        catatan = EXCLUDED.catatan;
+    `;
+  } catch (e) {
+    console.error("Error persisting purchase to Neon:", e);
+  }
+}
+
+export async function persistDeletePurchase(id: number) {
+  const sql = getNeonSql();
+  if (!sql) return;
+  try {
+    await sql`DELETE FROM purchase_history WHERE id = ${id}`;
+  } catch (e) {
+    console.error("Error deleting purchase from Neon:", e);
+  }
+}
+

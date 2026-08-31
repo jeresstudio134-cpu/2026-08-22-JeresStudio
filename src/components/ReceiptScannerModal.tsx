@@ -22,6 +22,7 @@ import {
   Plus,
   Trash2,
   Calculator,
+  Loader2,
 } from "lucide-react";
 import { api } from "../lib/api.js";
 import { ScannedReceiptResult, ScannedReceiptItem } from "../types/index.js";
@@ -187,7 +188,18 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       }
 
       setFormVendor(result.vendor_name || "");
-      setFormAmount(result.nominal ? result.nominal.toString() : "");
+      
+      const itemsList = Array.isArray(result.items) ? result.items : [];
+      setFormItems(itemsList);
+
+      const itemsSum = itemsList.reduce(
+        (sum, it) => sum + (Number(it.subtotal) || (Number(it.qty) || 0) * (Number(it.harga_satuan) || 0)),
+        0
+      );
+
+      const computedAmount = itemsSum > 0 ? itemsSum : (Number(result.nominal) || 0);
+      setFormAmount(computedAmount > 0 ? computedAmount.toString() : "");
+
       if (result.tanggal) {
         // Validate date format YYYY-MM-DD
         const dateMatch = result.tanggal.match(/^\d{4}-\d{2}-\d{2}$/);
@@ -196,7 +208,6 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       setFormMethod(result.metode_pembayaran || "Cash");
       setFormReference(result.referensi || "");
       setFormDescription(result.keterangan || "");
-      setFormItems(result.items || []);
     } catch (err: any) {
       console.error("AI Scan Error:", err);
       let message = err?.message || "Gagal memindai nota dengan AI. Silakan coba lagi atau isi manual.";
@@ -267,12 +278,32 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       }
 
       updated[index] = current;
+
+      // Auto compute total nominal from all items
+      const newTotal = updated.reduce(
+        (sum, it) => sum + (Number(it.subtotal) || (Number(it.qty) || 0) * (Number(it.harga_satuan) || 0)),
+        0
+      );
+      if (newTotal > 0) {
+        setFormAmount(newTotal.toString());
+      }
+
       return updated;
     });
   };
 
   const handleDeleteItem = (index: number) => {
-    setFormItems((prev) => prev.filter((_, i) => i !== index));
+    setFormItems((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      const newTotal = updated.reduce(
+        (sum, it) => sum + (Number(it.subtotal) || (Number(it.qty) || 0) * (Number(it.harga_satuan) || 0)),
+        0
+      );
+      if (newTotal > 0) {
+        setFormAmount(newTotal.toString());
+      }
+      return updated;
+    });
   };
 
   const itemsTotalSubtotal = formItems.reduce(
@@ -291,7 +322,12 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     e.preventDefault();
     setScanError("");
 
-    const parsedNominal = Number(formAmount.replace(/\D/g, ""));
+    let parsedNominal = Number(formAmount.replace(/\D/g, ""));
+    if ((isNaN(parsedNominal) || parsedNominal <= 0) && itemsTotalSubtotal > 0) {
+      parsedNominal = itemsTotalSubtotal;
+      setFormAmount(itemsTotalSubtotal.toString());
+    }
+
     if (isNaN(parsedNominal) || parsedNominal <= 0) {
       setScanError("Nominal transaksi harus lebih dari 0.");
       return;
@@ -922,6 +958,24 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                     )}
                   </div>
 
+                  {/* Inline Error / Notice if validation fails */}
+                  {scanError && (
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>{scanError}</span>
+                    </div>
+                  )}
+
+                  {/* Scanning Status Banner inside Form */}
+                  {isScanning && (
+                    <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs text-indigo-900 dark:text-indigo-200 rounded-xl flex items-center gap-2.5 animate-pulse">
+                      <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <div className="flex-1">
+                        <span className="font-bold">AI sedang mengekstrak isi nota...</span> Hasil (nominal, toko, tanggal, rincian item) akan terisi otomatis dalam beberapa detik.
+                      </div>
+                    </div>
+                  )}
+
                   {/* Modal Action Buttons */}
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                     <button
@@ -935,16 +989,28 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                     <button
                       type="submit"
                       disabled={isSaving || isScanning}
-                      className={`inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white rounded-xl shadow-md transition-colors cursor-pointer ${
+                      className={`inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                         formType === "masuk"
                           ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
                           : "bg-rose-600 hover:bg-rose-700 shadow-rose-600/20"
                       }`}
                     >
-                      <Check className="w-4 h-4" />
-                      {isSaving
-                        ? "Menyimpan Transaksi..."
-                        : "Simpan ke Pembukuan Kas"}
+                      {isScanning ? (
+                        <>
+                          <Sparkles className="w-4 h-4 animate-spin text-indigo-200" />
+                          <span>AI Sedang Membaca Nota...</span>
+                        </>
+                      ) : isSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Menyimpan Transaksi...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>Simpan ke Pembukuan Kas</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>

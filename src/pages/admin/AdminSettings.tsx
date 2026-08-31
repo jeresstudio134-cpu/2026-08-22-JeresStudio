@@ -161,6 +161,36 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
     }
   };
 
+  const [syncingDb, setSyncingDb] = useState(false);
+
+  const handleSyncDatabase = async () => {
+    try {
+      setSyncingDb(true);
+      setDbInitNotice(null);
+      const res = await api.syncDatabase();
+      if (res.success) {
+        setDbInitNotice({
+          type: "success",
+          message: `Berhasil! Data terbaru dari database Neon PostgreSQL telah disinkronkan (${res.counts?.products ?? 0} produk, ${res.counts?.orders ?? 0} orderan, ${res.counts?.transactions ?? 0} transaksi).`,
+        });
+        await fetchIntegrations();
+        if (onRefreshSettings) onRefreshSettings();
+      } else {
+        setDbInitNotice({
+          type: "error",
+          message: res.message || "Gagal sinkronisasi data dari Neon.",
+        });
+      }
+    } catch (err: any) {
+      setDbInitNotice({
+        type: "error",
+        message: err.message || "Terjadi kesalahan saat menghubungi server.",
+      });
+    } finally {
+      setSyncingDb(false);
+    }
+  };
+
   const handleInitDatabase = async () => {
     try {
       setInitingDb(true);
@@ -169,7 +199,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
       if (res.success) {
         setDbInitNotice({
           type: "success",
-          message: `Berhasil! ${res.tableCount} tabel di Neon PostgreSQL telah terbuat & tersinkronisasi.`,
+          message: `Berhasil! ${res.tableCount} tabel di Neon PostgreSQL telah diverifikasi & tersinkronisasi.`,
         });
         await fetchIntegrations();
       } else {
@@ -1248,12 +1278,20 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
 
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
-                  onClick={handleInitDatabase}
-                  disabled={initingDb}
+                  onClick={handleSyncDatabase}
+                  disabled={syncingDb || initingDb}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${initingDb ? "animate-spin" : ""}`} />
-                  {initingDb ? "Membuat Tabel..." : "⚡ Buat & Sinkron Tabel Neon (1-Klik)"}
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingDb ? "animate-spin" : ""}`} />
+                  {syncingDb ? "Menyinkronkan Data..." : "🔄 Tarik Data dari Neon (Sync)"}
+                </button>
+                <button
+                  onClick={handleInitDatabase}
+                  disabled={initingDb || syncingDb}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+                >
+                  <Database className={`w-3.5 h-3.5 ${initingDb ? "animate-spin" : ""}`} />
+                  {initingDb ? "Memeriksa Skema..." : "⚡ Verifikasi Skema Tabel"}
                 </button>
                 <button
                   onClick={() => setSqlModalOpen(true)}

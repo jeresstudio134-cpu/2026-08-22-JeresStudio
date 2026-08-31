@@ -10,6 +10,9 @@ import { eq, desc } from "drizzle-orm";
 import {
   getDatabaseStatus,
   initNeonTables,
+  repairPostgresSequences,
+  syncFromNeonToMemory,
+  getNeonSql,
   persistProduct,
   persistDeleteProduct,
   persistOrder,
@@ -26,6 +29,10 @@ import {
   persistGuide,
   persistDeleteGuide,
   persistActivityLog,
+  persistCategory,
+  persistDeleteCategory,
+  persistPurchase,
+  persistDeletePurchase,
 } from "../src/db/neonService.js";
 
 const app = express();
@@ -98,6 +105,43 @@ const handleDbInit = async (req: Request, res: Response) => {
 
 app.post("/api/db/init", handleDbInit);
 app.get("/api/db/init", handleDbInit);
+
+// Database Full Re-sync Endpoint (Fetches fresh live data from Neon into memory)
+const handleDbSync = async (req: Request, res: Response) => {
+  try {
+    const sql = getNeonSql();
+    if (!sql) {
+      res.status(400).json({
+        success: false,
+        message: "DATABASE_URL belum dikonfigurasi di Environment Variables.",
+      });
+      return;
+    }
+    await syncFromNeonToMemory(sql);
+    await repairPostgresSequences(sql);
+    res.json({
+      success: true,
+      message: "Data berhasil disinkronkan langsung dari database Neon PostgreSQL.",
+      counts: {
+        products: memoryDb.products.length,
+        orders: memoryDb.orders.length,
+        transactions: memoryDb.transactions.length,
+        vendors: memoryDb.vendors.length,
+        purchases: memoryDb.purchaseHistory?.length || 0,
+        categories: memoryDb.categories?.length || 0,
+        guides: memoryDb.guides?.length || 0,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      message: "Gagal sinkronisasi data dari Neon: " + (err.message || String(err)),
+    });
+  }
+};
+
+app.post("/api/db/sync", handleDbSync);
+app.get("/api/db/sync", handleDbSync);
 
 // Helper to generate public share token
 function generateShareToken(): string {
@@ -1910,6 +1954,7 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.purchaseHistory.push(newPurchase);
+  persistPurchase(newPurchase).catch(() => {});
 
   const vendor = memoryDb.vendors.find((v) => v.id === Number(vendor_id));
 
@@ -1920,10 +1965,11 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
       ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
       : 1;
 
-    memoryDb.transactions.push({
+    const newTx = {
       id: newTxId,
       tipe: "keluar",
       kategori: "Kulakan Bahan Baku",
+      kantong: "modal",
       nominal: total,
       tanggal: newPurchase.tanggal,
       metode_pembayaran: "Transfer BCA",
@@ -1932,7 +1978,9 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
       created_by: currentUser.nama || "Admin",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    });
+    };
+    memoryDb.transactions.push(newTx);
+    persistTransaction(newTx).catch(() => {});
   }
 
   logActivity(currentUser.nama, "Catat Kulakan", `Beli ${newPurchase.nama_barang} ke ${vendor?.nama_vendor || "Vendor"} (Rp ${total.toLocaleString()})`);
@@ -1952,6 +2000,7 @@ app.delete("/api/purchases/:id", authenticateToken, (req: Request, res: Response
   }
 
   const deleted = memoryDb.purchaseHistory.splice(index, 1)[0];
+  persistDeletePurchase(id).catch(() => {});
   logActivity(currentUser.nama, "Hapus Kulakan", `Menghapus catatan kulakan: ${deleted.nama_barang}`);
   res.json({ message: "Catatan kulakan berhasil dihapus" });
 });
@@ -2082,6 +2131,7 @@ app.post("/api/categories", authenticateToken, (req: Request, res: Response) => 
 
   if (!exists) {
     memoryDb.categories.push(newCat);
+    persistCategory(newCat).catch(() => {});
   }
 
   logActivity(
@@ -2118,10 +2168,14 @@ app.put("/api/categories/:id", authenticateToken, (req: Request, res: Response) 
         t.kategori = trimmedNewName;
         if (type) t.tipe = normalizeCategoryType(type);
         t.updated_at = new Date().toISOString();
+        persistTransaction(t).catch(() => {});
         affectedCount++;
       }
     });
   }
+
+  const updatedCat = { id, name: trimmedNewName, type: type || "masuk" };
+  persistCategory(updatedCat).catch(() => {});
 
   logActivity(
     currentUser.nama,
@@ -2131,14 +2185,23 @@ app.put("/api/categories/:id", authenticateToken, (req: Request, res: Response) 
 
   res.json({
     message: "Kategori berhasil diperbarui pada riwayat transaksi",
-    category: { id, name: trimmedNewName, type: type || "masuk" },
+    category: updatedCat,
   });
 });
 
 // Delete Category
 app.delete("/api/categories/:id", authenticateToken, (req: Request, res: Response) => {
   const currentUser = (req as any).user;
+  const id = Number(req.params.id);
   const { categoryName } = req.query;
+
+  if (id) {
+    persistDeleteCategory(id).catch(() => {});
+    if (memoryDb.categories) {
+      const idx = memoryDb.categories.findIndex((c) => c.id === id);
+      if (idx !== -1) memoryDb.categories.splice(idx, 1);
+    }
+  }
 
   logActivity(
     currentUser.nama,
@@ -2433,17 +2496,17 @@ app.post("/api/transactions/scan-receipt", authenticateToken, async (req: Reques
 
     const ai = getGeminiClient();
 
-    const promptText = `Kamu adalah asisten AI akuntansi & kasir cerdas untuk Toko Percetakan & Digital 'Jeres Studio' (usaha percetakan: stiker, sablon DTF, spanduk/banner flexi, jersey printing, merchandise, ATK, dan operasional workshop).
+    const promptText = `Kamu adalah asisten AI akuntansi & kasir cerdas untuk Toko Percetakan & Digital 'Jeres Studio' (usaha percetakan: stiker, sablon DTF, spanduk/banner flexi, jersey printing, merchandise, ATK, material bangunan/toko, dan operasional workshop).
 
-Analisis foto atau gambar nota / struk belanja / faktur invoice / kwitansi / struk bensin-listrik / bukti transfer pembayaran yang diunggah.
+Analisis foto atau gambar nota / struk belanja / faktur invoice / kwitansi / struk bensin-listrik / bukti bayar yang diunggah secara teliti (baik cetakan komputer maupun tulisan tangan pada kertas nota bon).
 
-Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
-1. tipe: 'keluar' (untuk nota belanja supplier, kulakan bahan baku, struk minimarket, token listrik PLN, servis mesin, kurir, bensin/transportasi, makan/konsumsi staff, nota belanja toko) ATAU 'masuk' (jika gambar adalah bukti transfer pembayaran pelanggan, kwitansi penerimaan kas/DP pelanggan, faktur penjualan order cetak). Defaultkan ke 'keluar' jika merupakan bon pembelian barang/jasa.
-2. vendor_name: Nama toko/merchant/penjual/instansi yang menerbitkan nota/struk (misal: 'Indomaret', 'CV Sinar Sablon', 'SPBU Pertamina', 'PLN', 'BCA Mobile', 'Mitra 10', 'Toko Plastik Makmur', dll.).
-3. nominal: Grand Total / Jumlah Total Akhir yang harus dibayar atau ditransfer (angka bulat integer murni dalam Rupiah, tanpa titik/koma/simbol).
+WAJIB mengekstrak informasi berikut ke dalam format JSON:
+1. tipe: 'keluar' (untuk nota belanja supplier, kulakan bahan baku, nota toko bangunan/material, struk minimarket, token listrik PLN, servis mesin, kurir, bensin/transportasi, makan/konsumsi staff, nota belanja toko) ATAU 'masuk' (jika gambar adalah bukti transfer pembayaran pelanggan, kwitansi penerimaan kas/DP pelanggan, faktur penjualan order cetak). Defaultkan ke 'keluar' jika merupakan bon pembelian barang/jasa.
+2. vendor_name: Nama toko/merchant/penjual/instansi yang menerbitkan nota/struk (misal: 'TK. SINAR AGUNG', 'Indomaret', 'CV Sinar Sablon', 'SPBU Pertamina', 'PLN', 'BCA Mobile', 'Mitra 10', dll.).
+3. nominal: Grand Total / Jumlah Total Akhir yang harus dibayar atau ditransfer (angka bulat integer murni dalam Rupiah, tanpa titik/koma/simbol). HARUS SAMA dengan akumulasi penjumlahan dari seluruh subtotal item pada nota.
 4. tanggal: Tanggal transaksi yang tertera pada nota (format YYYY-MM-DD). Jika tahun tidak jelas, gunakan tahun ${new Date().getFullYear()} atau tanggal hari ini (${new Date().toISOString().slice(0, 10)}).
 5. kategori: Kategori pembukuan kas Jeres Studio yang paling tepat:
-   - 'Kulakan Bahan Baku' (stiker vinyl, flexi banner, kaos polos, kain jersey, akrilik, kertas art paper, dll.)
+   - 'Kulakan Bahan Baku' (stiker vinyl, flexi banner, kaos polos, kain jersey, akrilik, kertas art paper, material toko/bengkel, dll.)
    - 'Tinta & Master Film DTF' (tinta sablon/sublim, lem bubuk DTF, pet film roll, cairan cleaner printhead, solvent)
    - 'Perawatan & Sparepart Mesin' (onderdil printer, damper, wiper, teknisi mesin, kabel head)
    - 'Listrik, Air & Internet' (token PLN, tagihan air PDAM, tagihan WiFi internet toko, pulsa)
@@ -2454,15 +2517,23 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
    - 'Penjualan Order Cetak' (jika bukti masuk)
    - 'DP Order Pelanggan' / 'Pelunasan Order'
 6. kantong: Kantong Kas Jeres Studio yang paling cocok:
-   - 'modal' (untuk belanja bahan baku, kulakan, tinta, mesin/alat cetak)
+   - 'modal' (untuk belanja bahan baku, kulakan, tinta, mesin/alat cetak, material toko)
    - 'overhead' (untuk listrik, WiFi/internet, konsumsi, bensin/transportasi, sewa, ATK)
    - 'gaji_saya' (untuk jasa desain owner / prive)
    - 'gaji_karyawan' (untuk upah/gaji staf, operator cetak, lembur)
    - 'margin' (untuk profit/pemasukan bersih atau penjualan umum)
 7. metode_pembayaran: Metode bayar terdeteksi ('Cash', 'QRIS', 'Transfer BCA', 'Transfer Mandiri', 'Transfer BNI', 'Transfer BRI', 'Debit', atau 'Lainnya').
-8. referensi: Nomor struk, nomor nota/invoice, no resi, atau kode transaksi jika ada. Jika tidak ada, kosongkan string.
-9. keterangan: Ringkasan narasi jelas mengenai pengeluaran/pemasukan tersebut (contoh: 'Belanja 2 roll Pet Film DTF 30cm & 1kg Hotmelt Powder di CV Sinar Sablon').
-10. items: Array rincian barang/jasa jika terbaca dalam struk: [ { "nama_item": string, "qty": number, "harga_satuan": number, "subtotal": number } ]. Jika tidak ada rincian per item, buat 1 item dengan nama rincian nota dan totalnya.
+8. referensi: Nomor struk, nomor nota/invoice, no resi, atau kode transaksi jika ada. Jika tidak ada, isi string kosong "".
+9. keterangan: Ringkasan narasi jelas mengenai pengeluaran/pemasukan tersebut (contoh: 'Belanja bahan bangunan berupa siku, holo, dan gysu di TK. SINAR AGUNG').
+10. items: ARRAY RINCIAN BARANG/JASA (SANGAT PENTING & WAJIB DIISI).
+    - Baca setiap baris tabel pada nota (baik kolom Qty, Nama Barang, Harga Satuan, dan Jumlah/Subtotal).
+    - Contoh jika pada nota tertulis:
+      * Baris 1: Qty = 1, Nama = "Siku", Harga = 100000, Subtotal = 100000
+      * Baris 2: Qty = 1, Nama = "Holo", Harga = 155000, Subtotal = 155000
+      * Baris 3: Qty = 2, Nama = "Gysu", Harga = 25000 (atau subtotal 50000), Subtotal = 50000
+      Maka buat 3 objek item tersebut secara lengkap dan terpisah.
+    - Jika satu baris tidak memiliki harga satuan eksplisit, hitung: harga_satuan = subtotal / qty.
+    - Jika nota tunggal tanpa rincian tabel berbaris-baris (misal slip bensin/transfer), buat minimal 1 item berisi deskripsi belanja dan subtotal = nominalnya.
 11. confidence_notes: Keterangan singkat mengenai kejelasan pembacaan gambar oleh AI.`;
 
     const candidateModels = [
@@ -2504,6 +2575,7 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
                   keterangan: { type: Type.STRING, description: "Ringkasan transaksi" },
                   items: {
                     type: Type.ARRAY,
+                    description: "Daftar rincian item atau baris belanja pada nota",
                     items: {
                       type: Type.OBJECT,
                       properties: {
@@ -2517,7 +2589,7 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
                   },
                   confidence_notes: { type: Type.STRING, description: "Catatan kejelasan pembacaan AI" },
                 },
-                required: ["tipe", "vendor_name", "nominal", "tanggal", "kategori", "keterangan"],
+                required: ["tipe", "vendor_name", "nominal", "tanggal", "kategori", "keterangan", "items"],
               },
             },
           });
@@ -2535,18 +2607,49 @@ Ekstrak dan kategorisasikan informasi berikut ke dalam format JSON:
 
           parsedJson = JSON.parse(rawText || "{}");
 
-          // Clean up parsed output numbers
+          // Clean up parsed output numbers & sanitize items
           if (parsedJson) {
-            if (parsedJson.nominal !== undefined) {
-              parsedJson.nominal = Math.round(Number(String(parsedJson.nominal).replace(/[^0-9.-]+/g, "")) || 0);
+            if (Array.isArray(parsedJson.items) && parsedJson.items.length > 0) {
+              parsedJson.items = parsedJson.items
+                .map((it: any) => {
+                  const nama = String(it.nama_item || "").trim();
+                  const qty = Number(it.qty) || 1;
+                  let harga = Math.round(Number(String(it.harga_satuan).replace(/[^0-9.-]+/g, "")) || 0);
+                  let sub = Math.round(Number(String(it.subtotal).replace(/[^0-9.-]+/g, "")) || 0);
+                  if (sub === 0 && harga > 0) sub = Math.round(qty * harga);
+                  if (harga === 0 && sub > 0 && qty > 0) harga = Math.round(sub / qty);
+                  return {
+                    nama_item: nama,
+                    qty: qty > 0 ? qty : 1,
+                    harga_satuan: harga,
+                    subtotal: sub,
+                  };
+                })
+                .filter((it: any) => it.nama_item && it.nama_item.length > 0);
             }
-            if (Array.isArray(parsedJson.items)) {
-              parsedJson.items = parsedJson.items.map((it: any) => ({
-                nama_item: String(it.nama_item || "").trim(),
-                qty: Number(it.qty) || 1,
-                harga_satuan: Math.round(Number(String(it.harga_satuan).replace(/[^0-9.-]+/g, "")) || 0),
-                subtotal: Math.round(Number(String(it.subtotal).replace(/[^0-9.-]+/g, "")) || 0),
-              }));
+
+            const itemsSubtotalSum = Array.isArray(parsedJson.items)
+              ? parsedJson.items.reduce((s: number, it: any) => s + (Number(it.subtotal) || 0), 0)
+              : 0;
+
+            if (parsedJson.nominal !== undefined) {
+              const rawNominal = Math.round(Number(String(parsedJson.nominal).replace(/[^0-9.-]+/g, "")) || 0);
+              // If items sum exists and nominal is 0 or differs, prioritize valid items sum
+              parsedJson.nominal = itemsSubtotalSum > 0 ? itemsSubtotalSum : rawNominal;
+            } else if (itemsSubtotalSum > 0) {
+              parsedJson.nominal = itemsSubtotalSum;
+            }
+
+            // Fallback: If no items were extracted but nominal exists, create 1 item
+            if ((!Array.isArray(parsedJson.items) || parsedJson.items.length === 0) && parsedJson.nominal > 0) {
+              parsedJson.items = [
+                {
+                  nama_item: parsedJson.keterangan || (parsedJson.vendor_name ? `Belanja ${parsedJson.vendor_name}` : "Pengeluaran Kas"),
+                  qty: 1,
+                  harga_satuan: parsedJson.nominal,
+                  subtotal: parsedJson.nominal,
+                },
+              ];
             }
           }
           break; // success
