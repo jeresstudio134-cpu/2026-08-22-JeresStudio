@@ -2371,7 +2371,69 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
 
   list.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
 
-  res.json({ transactions: list });
+  // Enrich transactions with items if missing
+  const enrichedList = list.map((t) => {
+    if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+      return t;
+    }
+
+    // 1. Try matching with orders
+    if (t.referensi) {
+      const cleanRef = t.referensi.trim();
+      const matchedOrder = (memoryDb.orders || []).find(
+        (o) => o.nomor_nota && o.nomor_nota.toLowerCase() === cleanRef.toLowerCase()
+      );
+      if (matchedOrder) {
+        const orderItems = (memoryDb.orderItems || []).filter((oi) => oi.order_id === matchedOrder.id);
+        if (orderItems.length > 0) {
+          return {
+            ...t,
+            items: orderItems.map((oi) => ({
+              nama_item: oi.nama_produk || "Item Order",
+              qty: Number(oi.qty) || 1,
+              harga_satuan: Number(oi.harga_satuan) || 0,
+              subtotal: Number(oi.subtotal) || (Number(oi.qty) || 1) * (Number(oi.harga_satuan) || 0),
+            })),
+          };
+        }
+      }
+
+      // 2. Try matching with purchase history
+      const matchedPurchase = (memoryDb.purchaseHistory || []).find(
+        (p) =>
+          (p.nomor_nota && p.nomor_nota.toLowerCase() === cleanRef.toLowerCase()) ||
+          `Kulakan #${p.id}`.toLowerCase() === cleanRef.toLowerCase()
+      );
+      if (matchedPurchase) {
+        return {
+          ...t,
+          items: [
+            {
+              nama_item: matchedPurchase.nama_barang,
+              qty: Number(matchedPurchase.qty) || 1,
+              harga_satuan: Number(matchedPurchase.harga_satuan) || 0,
+              subtotal: Number(matchedPurchase.total) || (Number(matchedPurchase.qty) || 1) * (Number(matchedPurchase.harga_satuan) || 0),
+            },
+          ],
+        };
+      }
+    }
+
+    // 3. Fallback item from transaction description & nominal
+    return {
+      ...t,
+      items: [
+        {
+          nama_item: t.keterangan || t.kategori || "Transaksi Kas",
+          qty: 1,
+          harga_satuan: Number(t.nominal) || 0,
+          subtotal: Number(t.nominal) || 0,
+        },
+      ],
+    };
+  });
+
+  res.json({ transactions: enrichedList });
 });
 
 // Get Financial Summary (KPI, Category Breakdown & 5-Pocket Balances)

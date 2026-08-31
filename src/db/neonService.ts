@@ -209,11 +209,19 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
         metode_pembayaran VARCHAR(50) DEFAULT 'Cash' NOT NULL,
         keterangan TEXT NOT NULL,
         referensi VARCHAR(100),
+        items TEXT,
         created_by VARCHAR(100) DEFAULT 'admin',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
       );
     `;
+
+    // Ensure items column exists in transactions for older tables
+    try {
+      await sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS items TEXT;`;
+    } catch {
+      // Column may already exist
+    }
 
     // 12. store_settings
     await sql`
@@ -451,13 +459,24 @@ export async function syncFromNeonToMemory(sql: any) {
     }));
 
     const txs = await sql`SELECT * FROM transactions ORDER BY id DESC`;
-    memoryDb.transactions = txs.map((t: any) => ({
-      ...t,
-      nominal: Number(t.nominal),
-      tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
-      created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
-      updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
-    }));
+    memoryDb.transactions = txs.map((t: any) => {
+      let parsedItems = undefined;
+      if (t.items) {
+        try {
+          parsedItems = typeof t.items === "string" ? JSON.parse(t.items) : t.items;
+        } catch {
+          parsedItems = undefined;
+        }
+      }
+      return {
+        ...t,
+        nominal: Number(t.nominal),
+        items: Array.isArray(parsedItems) ? parsedItems : undefined,
+        tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
+        created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+        updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+      };
+    });
 
     const cats = await sql`SELECT * FROM categories ORDER BY id ASC`;
     if (cats.length > 0) {
@@ -682,13 +701,14 @@ export async function persistTransaction(tx: any) {
   if (!sql) return;
   try {
     const tanggal = tx.tanggal ? new Date(tx.tanggal) : new Date();
+    const itemsJson = tx.items ? JSON.stringify(tx.items) : null;
     await sql`
       INSERT INTO transactions (
-        id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, created_by, updated_at
+        id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, updated_at
       ) VALUES (
         ${tx.id}, ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${tx.nominal}, 
         ${tanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
-        ${tx.referensi || null}, ${tx.created_by || 'admin'}, ${new Date()}
+        ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${new Date()}
       )
       ON CONFLICT (id) DO UPDATE SET
         tipe = EXCLUDED.tipe,
@@ -699,6 +719,7 @@ export async function persistTransaction(tx: any) {
         metode_pembayaran = EXCLUDED.metode_pembayaran,
         keterangan = EXCLUDED.keterangan,
         referensi = EXCLUDED.referensi,
+        items = EXCLUDED.items,
         updated_at = NOW();
     `;
   } catch (e) {

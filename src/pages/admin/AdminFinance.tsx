@@ -1439,40 +1439,77 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                             </div>
                           </div>
 
-                          {/* Itemized Breakdown if exists */}
-                          {tx.items && tx.items.length > 0 && (
-                            <div className="space-y-1.5 pt-1">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                                <Package className="w-3 h-3 text-indigo-600" />
-                                Rincian Item Transaksi ({tx.items.length} item)
-                              </span>
-                              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
-                                {tx.items.map((item, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="p-2 flex items-center justify-between text-[11px]"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-mono flex items-center justify-center text-slate-500 font-bold">
-                                        {idx + 1}
-                                      </span>
-                                      <span className="font-medium text-slate-900 dark:text-white">
-                                        {item.nama_item}
-                                      </span>
-                                      {item.qty > 1 && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
-                                          x{item.qty} @ {formatRupiah(item.harga_satuan)}
+                          {/* Itemized Breakdown Section */}
+                          {(() => {
+                            const activeItems = (tx.items && tx.items.length > 0)
+                              ? tx.items
+                              : [
+                                  {
+                                    nama_item: tx.keterangan || tx.kategori || "Transaksi Kas",
+                                    qty: 1,
+                                    harga_satuan: tx.nominal,
+                                    subtotal: tx.nominal,
+                                  },
+                                ];
+                            const itemsTotal = activeItems.reduce(
+                              (s, it) => s + (Number(it.subtotal) || (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0)),
+                              0
+                            );
+
+                            return (
+                              <div className="space-y-1.5 pt-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1.5">
+                                    <Package className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                    Rincian Item Transaksi ({activeItems.length} item)
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                    Akumulasi: <strong className="text-slate-900 dark:text-white">{formatRupiah(itemsTotal)}</strong>
+                                  </span>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+                                  {activeItems.map((item, idx) => {
+                                    const qty = Number(item.qty) || 1;
+                                    const unitPrice = Number(item.harga_satuan) || 0;
+                                    const subtotal = Number(item.subtotal) || qty * unitPrice;
+                                    return (
+                                      <div
+                                        key={idx}
+                                        className="p-2.5 flex items-center justify-between text-[11px] hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                          <span className="w-5 h-5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-[10px] font-mono flex items-center justify-center font-bold shrink-0 border border-indigo-100 dark:border-indigo-900/50">
+                                            {idx + 1}
+                                          </span>
+                                          <div className="min-w-0">
+                                            <span className="font-semibold text-slate-900 dark:text-white block truncate">
+                                              {item.nama_item}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                              {qty} {qty > 1 ? "unit" : "item"} {unitPrice > 0 ? `@ ${formatRupiah(unitPrice)}` : ""}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <span className="font-mono font-bold text-slate-900 dark:text-white shrink-0">
+                                          {formatRupiah(subtotal)}
                                         </span>
-                                      )}
+                                      </div>
+                                    );
+                                  })}
+
+                                  {activeItems.length > 1 && (
+                                    <div className="p-2 px-3 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                                      <span>Total {activeItems.length} Item:</span>
+                                      <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                        {formatRupiah(itemsTotal)}
+                                      </span>
                                     </div>
-                                    <span className="font-mono font-bold text-slate-900 dark:text-white">
-                                      {formatRupiah(item.subtotal || item.harga_satuan * item.qty)}
-                                    </span>
-                                  </div>
-                                ))}
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
