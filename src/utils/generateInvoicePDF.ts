@@ -54,6 +54,36 @@ export function getPublicInvoiceUrl(order: Order): string {
 }
 
 /**
+ * Helper aman untuk menangani output PDF: Mencoba membuka tab baru,
+ * dan jika diblokir oleh sandbox iframe / popup blocker browser, otomatis mendownload file PDF.
+ */
+function safeHandlePdfOutput(
+  doc: jsPDF,
+  pdfBlob: Blob,
+  blobUrl: string,
+  filename: string,
+  action: "open" | "download" | "print" | "blob" = "open"
+): void {
+  if (action === "blob") return;
+  if (action === "download") {
+    doc.save(filename);
+    return;
+  }
+  if (action === "open" || action === "print") {
+    try {
+      const win = window.open(blobUrl, "_blank");
+      if (!win || win.closed || typeof win.closed === "undefined") {
+        console.warn("Popup diblokir browser/iframe sandbox. Mengunduh file PDF sebagai fallback:", filename);
+        doc.save(filename);
+      }
+    } catch (err) {
+      console.warn("Gagal membuka window.open, mengunduh PDF secara langsung:", err);
+      doc.save(filename);
+    }
+  }
+}
+
+/**
  * Format nomor WhatsApp ke format internasional (misal: 0812... -> 62812...)
  */
 export function formatWhatsAppNumber(phone: string): string {
@@ -826,11 +856,7 @@ export async function generateInvoicePDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  if (action === "download") {
-    doc.save(filename);
-  } else if (action === "open" || action === "print") {
-    window.open(blobUrl, "_blank");
-  }
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1046,8 +1072,7 @@ export async function generateSuratJalanPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  if (action === "download") doc.save(filename);
-  else if (action === "open" || action === "print") window.open(blobUrl, "_blank");
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1240,8 +1265,7 @@ export async function generateTandaTerimaPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  if (action === "download") doc.save(filename);
-  else if (action === "open" || action === "print") window.open(blobUrl, "_blank");
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
