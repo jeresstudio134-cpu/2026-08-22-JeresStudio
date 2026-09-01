@@ -2474,114 +2474,120 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
 
 // Get Financial Summary (KPI, Category Breakdown & 5-Pocket Balances)
 app.get("/api/transactions/summary", authenticateToken, (req: Request, res: Response) => {
-  const { kantong, startDate, endDate } = req.query;
-  const transactions = memoryDb.transactions || [];
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  try {
+    const { kantong, startDate, endDate } = req.query;
+    const transactions = memoryDb.transactions || [];
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
 
-  let totalPemasukan = 0;
-  let totalPengeluaran = 0;
-  let pemasukanBulanIni = 0;
-  let pengeluaranBulanIni = 0;
+    let totalPemasukan = 0;
+    let totalPengeluaran = 0;
+    let pemasukanBulanIni = 0;
+    let pengeluaranBulanIni = 0;
 
-  // 5 Kantong Balances Trackers (All-Time Cash Position)
-  const kantongBalances = {
-    modal: { saldo: 0, masuk: 0, keluar: 0 },
-    overhead: { saldo: 0, masuk: 0, keluar: 0 },
-    gaji_saya: { saldo: 0, masuk: 0, keluar: 0 },
-    gaji_karyawan: { saldo: 0, masuk: 0, keluar: 0 },
-    margin: { saldo: 0, masuk: 0, keluar: 0 },
-  };
+    // 5 Kantong Balances Trackers (All-Time Cash Position)
+    const kantongBalances = {
+      modal: { saldo: 0, masuk: 0, keluar: 0 },
+      overhead: { saldo: 0, masuk: 0, keluar: 0 },
+      gaji_saya: { saldo: 0, masuk: 0, keluar: 0 },
+      gaji_karyawan: { saldo: 0, masuk: 0, keluar: 0 },
+      margin: { saldo: 0, masuk: 0, keluar: 0 },
+    };
 
-  const incomeCatMap: Record<string, { total: number; count: number }> = {};
-  const expenseCatMap: Record<string, { total: number; count: number }> = {};
+    const incomeCatMap: Record<string, { total: number; count: number }> = {};
+    const expenseCatMap: Record<string, { total: number; count: number }> = {};
 
-  const startBound = startDate ? new Date(startDate as string) : null;
-  if (startBound) startBound.setHours(0, 0, 0, 0);
+    const startBound = startDate ? new Date(startDate as string) : null;
+    if (startBound && !isNaN(startBound.getTime())) startBound.setHours(0, 0, 0, 0);
 
-  const endBound = endDate ? new Date(endDate as string) : null;
-  if (endBound) endBound.setHours(23, 59, 59, 999);
+    const endBound = endDate ? new Date(endDate as string) : null;
+    if (endBound && !isNaN(endBound.getTime())) endBound.setHours(23, 59, 59, 999);
 
-  transactions.forEach((t) => {
-    const nominal = Number(t.nominal) || 0;
-    const tDate = new Date(t.tanggal);
-    const isThisMonth = tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
-    const kType = normalizeKantongKas(t.kantong, t.kategori, t.tipe);
+    transactions.forEach((t) => {
+      const nominal = Number(t.nominal) || 0;
+      const tDate = t.tanggal ? new Date(t.tanggal) : new Date();
+      const validDate = !isNaN(tDate.getTime());
+      const isThisMonth = validDate && tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
+      const kType = normalizeKantongKas(t.kantong, t.kategori, t.tipe);
 
-    // Track overall pockets (all-time cash balance)
-    if (kantongBalances[kType]) {
-      if (t.tipe === "masuk") {
-        kantongBalances[kType].masuk += nominal;
-        kantongBalances[kType].saldo += nominal;
-      } else if (t.tipe === "keluar") {
-        kantongBalances[kType].keluar += nominal;
-        kantongBalances[kType].saldo -= nominal;
-      }
-    }
-
-    // Check date range condition for KPI and Category breakdowns
-    let inDateRange = true;
-    if (startBound && tDate < startBound) inDateRange = false;
-    if (endBound && tDate > endBound) inDateRange = false;
-
-    // Filter by kantong if requested
-    const matchKantongFilter = !kantong || kantong === "all" || kType === kantong;
-
-    if (inDateRange && matchKantongFilter) {
-      if (t.tipe === "masuk") {
-        totalPemasukan += nominal;
-        if (isThisMonth) pemasukanBulanIni += nominal;
-
-        const catName = t.kategori || "Pemasukan Toko";
-        if (!incomeCatMap[catName]) {
-          incomeCatMap[catName] = { total: 0, count: 0 };
+      // Track overall pockets (all-time cash balance)
+      if (kantongBalances[kType]) {
+        if (t.tipe === "masuk") {
+          kantongBalances[kType].masuk += nominal;
+          kantongBalances[kType].saldo += nominal;
+        } else if (t.tipe === "keluar") {
+          kantongBalances[kType].keluar += nominal;
+          kantongBalances[kType].saldo -= nominal;
         }
-        incomeCatMap[catName].total += nominal;
-        incomeCatMap[catName].count += 1;
-      } else if (t.tipe === "keluar") {
-        totalPengeluaran += nominal;
-        if (isThisMonth) pengeluaranBulanIni += nominal;
-
-        const catName = t.kategori || "Pengeluaran Operasional";
-        if (!expenseCatMap[catName]) {
-          expenseCatMap[catName] = { total: 0, count: 0 };
-        }
-        expenseCatMap[catName].total += nominal;
-        expenseCatMap[catName].count += 1;
       }
-    }
-  });
 
-  const breakdownPemasukan = Object.entries(incomeCatMap)
-    .map(([kategori, val]) => ({
-      kategori,
-      total: val.total,
-      count: val.count,
-    }))
-    .sort((a, b) => b.total - a.total);
+      // Check date range condition for KPI and Category breakdowns
+      let inDateRange = true;
+      if (startBound && validDate && tDate < startBound) inDateRange = false;
+      if (endBound && validDate && tDate > endBound) inDateRange = false;
 
-  const breakdownPengeluaran = Object.entries(expenseCatMap)
-    .map(([kategori, val]) => ({
-      kategori,
-      total: val.total,
-      count: val.count,
-    }))
-    .sort((a, b) => b.total - a.total);
+      // Filter by kantong if requested
+      const matchKantongFilter = !kantong || kantong === "all" || kType === kantong;
 
-  res.json({
-    summary: {
-      totalPemasukan,
-      totalPengeluaran,
-      saldoBersih: totalPemasukan - totalPengeluaran,
-      pemasukanBulanIni,
-      pengeluaranBulanIni,
-      saldoBulanIni: pemasukanBulanIni - pengeluaranBulanIni,
-      breakdownPemasukan,
-      breakdownPengeluaran,
-      kantongBalances,
-    },
-  });
+      if (inDateRange && matchKantongFilter) {
+        if (t.tipe === "masuk") {
+          totalPemasukan += nominal;
+          if (isThisMonth) pemasukanBulanIni += nominal;
+
+          const catName = t.kategori || "Pemasukan Toko";
+          if (!incomeCatMap[catName]) {
+            incomeCatMap[catName] = { total: 0, count: 0 };
+          }
+          incomeCatMap[catName].total += nominal;
+          incomeCatMap[catName].count += 1;
+        } else if (t.tipe === "keluar") {
+          totalPengeluaran += nominal;
+          if (isThisMonth) pengeluaranBulanIni += nominal;
+
+          const catName = t.kategori || "Pengeluaran Operasional";
+          if (!expenseCatMap[catName]) {
+            expenseCatMap[catName] = { total: 0, count: 0 };
+          }
+          expenseCatMap[catName].total += nominal;
+          expenseCatMap[catName].count += 1;
+        }
+      }
+    });
+
+    const breakdownPemasukan = Object.entries(incomeCatMap)
+      .map(([kategori, val]) => ({
+        kategori,
+        total: val.total,
+        count: val.count,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const breakdownPengeluaran = Object.entries(expenseCatMap)
+      .map(([kategori, val]) => ({
+        kategori,
+        total: val.total,
+        count: val.count,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({
+      summary: {
+        totalPemasukan,
+        totalPengeluaran,
+        saldoBersih: totalPemasukan - totalPengeluaran,
+        pemasukanBulanIni,
+        pengeluaranBulanIni,
+        saldoBulanIni: pemasukanBulanIni - pengeluaranBulanIni,
+        breakdownPemasukan,
+        breakdownPengeluaran,
+        kantongBalances,
+      },
+    });
+  } catch (err: any) {
+    console.error("Error computing transactions summary:", err);
+    res.status(500).json({ error: "Gagal menghitung ringkasan kas." });
+  }
 });
 
 // AI Scan Receipt / Invoice / Nota with Gemini (with multi-model fallback and auto-retry for 503/429 spikes)

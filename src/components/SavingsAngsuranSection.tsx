@@ -25,6 +25,7 @@ interface SavingsAngsuranSectionProps {
   targets: SavingsAngsuranTarget[];
   kantongBalances: KantongBalances | null;
   onRefresh: () => void;
+  onSuccess?: (msg: string) => void;
   onOpenTransfer?: (source?: KantongKasType, targetId?: number) => void;
   onOpenTransferModal?: (source?: KantongKasType, targetId?: number) => void;
   onOpenAddTarget?: () => void;
@@ -47,6 +48,7 @@ export const SavingsAngsuranSection: React.FC<SavingsAngsuranSectionProps> = ({
   targets,
   kantongBalances,
   onRefresh,
+  onSuccess,
   onOpenTransfer,
   onOpenTransferModal,
   onOpenAddTarget,
@@ -76,7 +78,7 @@ export const SavingsAngsuranSection: React.FC<SavingsAngsuranSectionProps> = ({
     else if (onOpenDeposit) onOpenDeposit(target);
   };
   const [filterType, setFilterType] = useState<"all" | "tabungan" | "angsuran" | "aktif" | "selesai">("all");
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [targetToDelete, setTargetToDelete] = useState<SavingsAngsuranTarget | null>(null);
   const [deleting, setDeleting] = useState<boolean>(false);
 
   // Metrics Calculation
@@ -105,7 +107,10 @@ export const SavingsAngsuranSection: React.FC<SavingsAngsuranSectionProps> = ({
     try {
       setDeleting(true);
       await api.deleteSavingsTarget(id);
-      setDeleteConfirmId(null);
+      setTargetToDelete(null);
+      if (onSuccess) {
+        onSuccess("Target berhasil dihapus.");
+      }
       onRefresh();
     } catch (err) {
       console.error("Gagal menghapus target:", err);
@@ -322,14 +327,14 @@ export const SavingsAngsuranSection: React.FC<SavingsAngsuranSectionProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleEditTarget(item)}
-                        className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                         title="Edit Target"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => setDeleteConfirmId(item.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                        onClick={() => setTargetToDelete(item)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
                         title="Hapus Target"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -407,7 +412,7 @@ export const SavingsAngsuranSection: React.FC<SavingsAngsuranSectionProps> = ({
                 <div className="pt-2 flex items-center gap-2">
                   <button
                     onClick={() => handleDeposit(item)}
-                    className={`flex-1 py-2 px-3 text-xs font-bold text-white rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 px-3 text-xs font-bold text-white rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       isAngsuran
                         ? "bg-rose-600 hover:bg-rose-700"
                         : "bg-emerald-600 hover:bg-emerald-700"
@@ -419,43 +424,54 @@ export const SavingsAngsuranSection: React.FC<SavingsAngsuranSectionProps> = ({
 
                   <button
                     onClick={() => handleTransfer(item.sumber_kantong_default, item.id)}
-                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors"
+                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
                     title="Pindahkan Saldo Kantong ke Rencana Ini"
                   >
                     <ArrowRightLeft className="w-4 h-4 text-indigo-500" />
                   </button>
                 </div>
-
-                {/* Delete Confirmation Overlay */}
-                {deleteConfirmId === item.id && (
-                  <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs rounded-2xl p-5 flex flex-col items-center justify-center text-center z-10 animate-fadeIn">
-                    <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
-                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                      Hapus Target "{item.nama}"?
-                    </h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">
-                      Catatan transaksi kas yang sudah tercatat tidak akan hilang.
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setDeleteConfirmId(null)}
-                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg"
-                      >
-                        Batal
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        disabled={deleting}
-                        className="px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg"
-                      >
-                        {deleting ? "Menghapus..." : "Ya, Hapus"}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Standard Deletion Confirmation Modal */}
+      {targetToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto shadow-xs">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                Hapus Target "{targetToDelete.nama}"?
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Rencana target {targetToDelete.tipe === "angsuran" ? "angsuran" : "tabungan"} ini akan dihapus. Riwayat mutasi kas yang sudah pernah dicatat tidak akan hilang.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setTargetToDelete(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => handleDelete(targetToDelete.id)}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {deleting ? "Menghapus..." : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

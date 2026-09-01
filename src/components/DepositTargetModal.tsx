@@ -18,7 +18,7 @@ interface DepositTargetModalProps {
   onClose: () => void;
   target: SavingsAngsuranTarget | null;
   kantongBalances: KantongBalances | null;
-  onSuccess: () => void;
+  onSuccess: (msg?: string) => void;
 }
 
 const KANTONG_OPTIONS: Array<{ id: KantongKasType; label: string; shortLabel: string }> = [
@@ -95,7 +95,11 @@ export const DepositTargetModal: React.FC<DepositTargetModalProps> = ({
         metode_pembayaran: metodePembayaran,
       });
 
-      onSuccess();
+      onSuccess(
+        isAngsuran
+          ? `Pembayaran angsuran Rp ${formatRupiah(numNominal)} berhasil dicatat!`
+          : `Setoran tabungan Rp ${formatRupiah(numNominal)} berhasil dicatat!`
+      );
       onClose();
     } catch (err: any) {
       console.error("Deposit error:", err);

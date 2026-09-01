@@ -196,6 +196,16 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
+  // Auto-dismiss success notification after 4 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => {
+        setSuccessMessage("");
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
   // Standard Form State
   const [formType, setFormType] = useState<"masuk" | "keluar">("masuk");
   const [formKantong, setFormKantong] = useState<KantongKasType>("margin");
@@ -729,13 +739,91 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     return true;
   });
 
-  const balances: KantongBalances = summary?.kantongBalances || {
-    modal: { saldo: 0, masuk: 0, keluar: 0 },
-    overhead: { saldo: 0, masuk: 0, keluar: 0 },
-    gaji_saya: { saldo: 0, masuk: 0, keluar: 0 },
-    gaji_karyawan: { saldo: 0, masuk: 0, keluar: 0 },
-    margin: { saldo: 0, masuk: 0, keluar: 0 },
-  };
+  // Dynamic accurate balances computation with live fallback from transactions
+  const balances: KantongBalances = useMemo(() => {
+    if (summary?.kantongBalances) {
+      const hasAnyBalance = (Object.values(summary.kantongBalances) as { saldo: number; masuk: number; keluar: number }[]).some(
+        (b) => b.saldo !== 0 || b.masuk !== 0 || b.keluar !== 0
+      );
+      if (hasAnyBalance || transactions.length === 0) {
+        return summary.kantongBalances;
+      }
+    }
+    // Fallback: Compute directly from transactions if server summary is empty/delayed
+    const computed: KantongBalances = {
+      modal: { saldo: 0, masuk: 0, keluar: 0 },
+      overhead: { saldo: 0, masuk: 0, keluar: 0 },
+      gaji_saya: { saldo: 0, masuk: 0, keluar: 0 },
+      gaji_karyawan: { saldo: 0, masuk: 0, keluar: 0 },
+      margin: { saldo: 0, masuk: 0, keluar: 0 },
+    };
+    transactions.forEach((tx) => {
+      const nom = Number(tx.nominal) || 0;
+      const k = (tx.kantong || "margin") as KantongKasType;
+      if (computed[k]) {
+        if (tx.tipe === "masuk") {
+          computed[k].masuk += nom;
+          computed[k].saldo += nom;
+        } else if (tx.tipe === "keluar") {
+          computed[k].keluar += nom;
+          computed[k].saldo -= nom;
+        }
+      }
+    });
+    return computed;
+  }, [summary, transactions]);
+
+  // Unified accurate summary for KPIs and totals
+  const effectiveSummary = useMemo(() => {
+    if (summary && (summary.totalPemasukan > 0 || summary.totalPengeluaran > 0 || transactions.length === 0)) {
+      return {
+        ...summary,
+        kantongBalances: balances,
+      };
+    }
+    // Compute fallback summary directly from loaded transactions
+    let totalPemasukan = 0;
+    let totalPengeluaran = 0;
+    const incomeCatMap: Record<string, { total: number; count: number }> = {};
+    const expenseCatMap: Record<string, { total: number; count: number }> = {};
+
+    transactions.forEach((tx) => {
+      const nom = Number(tx.nominal) || 0;
+      if (tx.tipe === "masuk") {
+        totalPemasukan += nom;
+        const cat = tx.kategori || "Pemasukan Toko";
+        if (!incomeCatMap[cat]) incomeCatMap[cat] = { total: 0, count: 0 };
+        incomeCatMap[cat].total += nom;
+        incomeCatMap[cat].count += 1;
+      } else if (tx.tipe === "keluar") {
+        totalPengeluaran += nom;
+        const cat = tx.kategori || "Pengeluaran Operasional";
+        if (!expenseCatMap[cat]) expenseCatMap[cat] = { total: 0, count: 0 };
+        expenseCatMap[cat].total += nom;
+        expenseCatMap[cat].count += 1;
+      }
+    });
+
+    const breakdownPemasukan = Object.entries(incomeCatMap)
+      .map(([kategori, val]) => ({ kategori, total: val.total, count: val.count }))
+      .sort((a, b) => b.total - a.total);
+
+    const breakdownPengeluaran = Object.entries(expenseCatMap)
+      .map(([kategori, val]) => ({ kategori, total: val.total, count: val.count }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      totalPemasukan,
+      totalPengeluaran,
+      saldoBersih: totalPemasukan - totalPengeluaran,
+      pemasukanBulanIni: summary?.pemasukanBulanIni || totalPemasukan,
+      pengeluaranBulanIni: summary?.pengeluaranBulanIni || totalPengeluaran,
+      saldoBulanIni: (summary?.pemasukanBulanIni || totalPemasukan) - (summary?.pengeluaranBulanIni || totalPengeluaran),
+      breakdownPemasukan,
+      breakdownPengeluaran,
+      kantongBalances: balances,
+    };
+  }, [summary, transactions, balances]);
 
   const currentSelectedPocketBalance = balances[formKantong]?.saldo ?? 0;
   const isSelectedExpenseExceeding =
@@ -822,9 +910,18 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
       {/* Success Notification Alert */}
       {successMessage && (
-        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 rounded-xl flex items-center gap-2 shadow-xs">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{successMessage}</span>
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 rounded-xl flex items-center justify-between gap-2 shadow-xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="font-medium">{successMessage}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMessage("")}
+            className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-200 p-0.5 rounded cursor-pointer transition-colors"
+            title="Tutup"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -925,16 +1022,16 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold text-slate-500">Total Kas Toko:</span>
               <span className="text-sm sm:text-base font-black font-mono tracking-tight text-slate-900 dark:text-white">
-                {formatRupiah(summary?.saldoBersih || 0)}
+                {formatRupiah(effectiveSummary.saldoBersih)}
               </span>
             </div>
             <span className="text-slate-300 dark:text-slate-700">|</span>
             <div className="flex items-center gap-2 text-xs">
               <span className="text-emerald-600 font-mono font-bold">
-                +{formatRupiah(summary?.totalPemasukan || 0)}
+                +{formatRupiah(effectiveSummary.totalPemasukan)}
               </span>
               <span className="text-rose-600 font-mono font-bold">
-                -{formatRupiah(summary?.totalPengeluaran || 0)}
+                -{formatRupiah(effectiveSummary.totalPengeluaran)}
               </span>
             </div>
           </div>
@@ -1098,7 +1195,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700 rounded-xl shadow-xs transition-all cursor-pointer"
               >
                 <ArrowRightLeft className="w-4 h-4 text-indigo-500" />
-                <span>🔄 Pindah Saldo Antar Kantong</span>
+                <span>Pindah Saldo Antar Kantong</span>
               </button>
 
               {/* Special Button: Auto Allocate Order (5 Kantong HPP Splitting) */}
@@ -1107,7 +1204,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xs transition-all cursor-pointer"
               >
                 <Layers className="w-4 h-4 text-indigo-600" />
-                <span>⚡ Alokasikan Order Cetak (5 Kantong HPP)</span>
+                <span>Alokasikan Order Cetak (5 Kantong HPP)</span>
               </button>
             </div>
 
@@ -1137,7 +1234,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           </div>
 
           {/* Category Composition Breakdown (Compact Accordion/Card) */}
-          {summary && (summary.breakdownPemasukan.length > 0 || summary.breakdownPengeluaran.length > 0) && (
+          {(effectiveSummary.breakdownPemasukan.length > 0 || effectiveSummary.breakdownPengeluaran.length > 0) && (
             <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -1152,13 +1249,13 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
               </div>
 
               {/* Breakdown Pengeluaran Top */}
-              {summary.breakdownPengeluaran.length > 0 && (
+              {effectiveSummary.breakdownPengeluaran.length > 0 && (
                 <div className="space-y-1.5">
                   <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">
                     Top Pengeluaran:
                   </span>
-                  {summary.breakdownPengeluaran.slice(0, 3).map((cat, idx) => {
-                    const pct = summary.totalPengeluaran > 0 ? (cat.total / summary.totalPengeluaran) * 100 : 0;
+                  {effectiveSummary.breakdownPengeluaran.slice(0, 3).map((cat, idx) => {
+                    const pct = effectiveSummary.totalPengeluaran > 0 ? (cat.total / effectiveSummary.totalPengeluaran) * 100 : 0;
                     return (
                       <div key={idx} className="space-y-0.5">
                         <div className="flex justify-between text-[11px]">
@@ -1179,13 +1276,13 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
               )}
 
               {/* Breakdown Pemasukan Top */}
-              {summary.breakdownPemasukan.length > 0 && (
+              {effectiveSummary.breakdownPemasukan.length > 0 && (
                 <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
                   <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">
                     Top Pemasukan:
                   </span>
-                  {summary.breakdownPemasukan.slice(0, 3).map((cat, idx) => {
-                    const pct = summary.totalPemasukan > 0 ? (cat.total / summary.totalPemasukan) * 100 : 0;
+                  {effectiveSummary.breakdownPemasukan.slice(0, 3).map((cat, idx) => {
+                    const pct = effectiveSummary.totalPemasukan > 0 ? (cat.total / effectiveSummary.totalPemasukan) * 100 : 0;
                     return (
                       <div key={idx} className="space-y-0.5">
                         <div className="flex justify-between text-[11px]">
@@ -1668,6 +1765,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           targets={savingsTargets}
           kantongBalances={balances}
           onRefresh={loadFinanceData}
+          onSuccess={(msg) => setSuccessMessage(msg)}
           onOpenCreateModal={() => {
             setTargetToEdit(null);
             setSavingsTargetModalOpen(true);
