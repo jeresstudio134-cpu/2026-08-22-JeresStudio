@@ -34,6 +34,7 @@ export interface InvoicePdfOptions {
   action?: "open" | "download" | "print" | "blob";
   filename?: string;
   paperFormat?: PaperFormat;
+  targetWindow?: Window | null;
 }
 
 export interface InvoicePdfResult {
@@ -41,6 +42,72 @@ export interface InvoicePdfResult {
   blob: Blob;
   blobUrl: string;
   filename: string;
+}
+
+/**
+ * Buat tab baru secara sinkron saat klik tombol untuk mencegah pop-up blocker browser
+ */
+export function createPrintTab(title: string = "Memuat Dokumen..."): Window | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const printTab = window.open("", "_blank");
+    if (printTab && printTab.document) {
+      printTab.document.write(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+    .card {
+      text-align: center;
+      padding: 32px 36px;
+      background: #1e293b;
+      border-radius: 16px;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.08);
+      max-width: 90%;
+      width: 360px;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border: 3.5px solid rgba(255,255,255,0.15);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 18px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: #ffffff; }
+    p { margin: 0; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h3>Membuka Dokumen...</h3>
+    <p>Mohon tunggu sebentar, dokumen PDF sedang disiapkan dan akan segera tampil di browser.</p>
+  </div>
+</body>
+</html>`);
+      printTab.document.close();
+    }
+    return printTab;
+  } catch (e) {
+    console.warn("Could not pre-open window:", e);
+    return null;
+  }
 }
 
 /**
@@ -54,14 +121,15 @@ export function getPublicInvoiceUrl(order: Order): string {
 }
 
 /**
- * Safe PDF Output Handler: handles pop-up blockers cleanly and falls back to download
+ * Safe PDF Output Handler: Membuka PDF di browser PDF Viewer tanpa paksa download
  */
 export function safeHandlePdfOutput(
   doc: jsPDF,
   pdfBlob: Blob,
   blobUrl: string,
   filename: string,
-  action: "download" | "open" | "print" | "blob" = "open"
+  action: "download" | "open" | "print" | "blob" = "open",
+  targetWindow?: Window | null
 ): void {
   if (typeof window === "undefined") return;
   if (action === "blob") return;
@@ -71,15 +139,29 @@ export function safeHandlePdfOutput(
     return;
   }
 
+  // Action: "open" atau "print" -> Langsung buka di tab PDF viewer browser
+  if (targetWindow && !targetWindow.closed) {
+    try {
+      targetWindow.location.href = blobUrl;
+      return;
+    } catch (err) {
+      console.warn("Gagal mengarahkan targetWindow:", err);
+    }
+  }
+
   try {
     const newWindow = window.open(blobUrl, "_blank");
     if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+      // Fallback anchor tag click dengan target _blank
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = filename;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => document.body.removeChild(a), 300);
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+      }, 300);
     }
   } catch {
     doc.save(filename);
@@ -396,7 +478,7 @@ export async function generateInvoicePDF(
     const pdfBlob = doc.output("blob");
     const blobUrl = URL.createObjectURL(pdfBlob);
 
-    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
     return { doc, blob: pdfBlob, blobUrl, filename };
   }
@@ -901,7 +983,7 @@ export async function generateInvoicePDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1138,7 +1220,7 @@ export async function generateSuratJalanPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1354,7 +1436,7 @@ export async function generateTandaTerimaPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }

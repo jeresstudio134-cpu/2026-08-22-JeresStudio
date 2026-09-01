@@ -8,6 +8,7 @@ import {
   exportInvoiceToXLS,
   exportInvoiceToCSV,
   getUserPaperPreference,
+  createPrintTab,
 } from "../utils/generateInvoicePDF.js";
 import { ChangePaperLayoutModal } from "./ChangePaperLayoutModal.js";
 import { DocumentPrintPreviewModal, PreviewDocType } from "./DocumentPrintPreviewModal.js";
@@ -131,14 +132,17 @@ export const PrintDropdown: React.FC<PrintDropdownProps> = ({
         setSelectedDocType("faktur");
         setPreviewModalOpen(true);
       } else if (actionType === "faktur") {
-        setSelectedDocType("faktur");
-        setPreviewModalOpen(true);
+        setLoadingAction("faktur");
+        const printTab = createPrintTab(`Invoice ${order.nomor_nota || ""}`);
+        await generateInvoicePDF(order, settings, { action: "open", targetWindow: printTab });
       } else if (actionType === "surat_jalan") {
-        setSelectedDocType("surat_jalan");
-        setPreviewModalOpen(true);
+        setLoadingAction("surat_jalan");
+        const printTab = createPrintTab(`Surat Jalan ${order.nomor_nota || ""}`);
+        await generateSuratJalanPDF(order, settings, { action: "open", targetWindow: printTab });
       } else if (actionType === "tanda_terima") {
-        setSelectedDocType("tanda_terima");
-        setPreviewModalOpen(true);
+        setLoadingAction("tanda_terima");
+        const printTab = createPrintTab(`Tanda Terima ${order.nomor_nota || ""}`);
+        await generateTandaTerimaPDF(order, settings, { action: "open", targetWindow: printTab });
       } else if (actionType === "xls") {
         setLoadingAction("xls");
         exportInvoiceToXLS(order, settings);

@@ -28,7 +28,7 @@ import { DedicatedPrintPage } from "./pages/print/DedicatedPrintPage.js";
 import { DocumentType } from "./components/print/PrintDocumentRenderer.js";
 
 // PDF Generator
-import { downloadInvoicePdf } from "./lib/generateInvoicePdf.js";
+import { openInvoicePdf, createPrintTab } from "./lib/generateInvoicePdf.js";
 
 function getInitialTrackRoute(): { isTrack: boolean; token: string | null } {
   const path = window.location.pathname;
@@ -114,7 +114,8 @@ function MainApp() {
 
   const handlePrintOrder = async (order: Order) => {
     try {
-      await downloadInvoicePdf(order, settings);
+      const printTab = createPrintTab(`Invoice ${order.nomor_nota || ""}`);
+      await openInvoicePdf(order, settings, printTab);
     } catch (err) {
       console.error("Gagal generate PDF:", err);
     }

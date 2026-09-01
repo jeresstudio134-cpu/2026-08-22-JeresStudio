@@ -7,6 +7,7 @@ import {
   getUserPaperPreference,
   setUserPaperPreference,
   PaperFormat,
+  createPrintTab,
 } from "../utils/generateInvoicePDF.js";
 import {
   Printer,
@@ -140,12 +141,14 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
     }
   };
 
-  // Action: Print Now
+  // Action: Print Now (Buka langsung di tab browser tanpa download)
   const handlePrint = async () => {
     try {
       setIsPrinting(true);
-      // Trigger PDF printer or browser print
-      const options = { action: "print" as const, paperFormat: paperFormat };
+      const printTab = createPrintTab(
+        `${docType === "faktur" ? "Invoice" : docType === "surat_jalan" ? "Surat Jalan" : "Tanda Terima"} ${order.nomor_nota || ""}`
+      );
+      const options = { action: "open" as const, paperFormat: paperFormat, targetWindow: printTab };
       if (docType === "faktur") {
         await generateInvoicePDF(order, settings, options);
       } else if (docType === "surat_jalan") {
