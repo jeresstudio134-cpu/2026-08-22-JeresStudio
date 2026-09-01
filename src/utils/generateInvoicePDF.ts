@@ -54,32 +54,35 @@ export function getPublicInvoiceUrl(order: Order): string {
 }
 
 /**
- * Helper aman untuk menangani output PDF: Mencoba membuka tab baru,
- * dan jika diblokir oleh sandbox iframe / popup blocker browser, otomatis mendownload file PDF.
+ * Safe PDF Output Handler: handles pop-up blockers cleanly and falls back to download
  */
-function safeHandlePdfOutput(
+export function safeHandlePdfOutput(
   doc: jsPDF,
   pdfBlob: Blob,
   blobUrl: string,
   filename: string,
-  action: "open" | "download" | "print" | "blob" = "open"
+  action: "download" | "open" | "print" | "blob" = "open"
 ): void {
+  if (typeof window === "undefined") return;
   if (action === "blob") return;
+
   if (action === "download") {
     doc.save(filename);
     return;
   }
-  if (action === "open" || action === "print") {
-    try {
-      const win = window.open(blobUrl, "_blank");
-      if (!win || win.closed || typeof win.closed === "undefined") {
-        console.warn("Popup diblokir browser/iframe sandbox. Mengunduh file PDF sebagai fallback:", filename);
-        doc.save(filename);
-      }
-    } catch (err) {
-      console.warn("Gagal membuka window.open, mengunduh PDF secara langsung:", err);
-      doc.save(filename);
+
+  try {
+    const newWindow = window.open(blobUrl, "_blank");
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 300);
     }
+  } catch {
+    doc.save(filename);
   }
 }
 
@@ -393,8 +396,7 @@ export async function generateInvoicePDF(
     const pdfBlob = doc.output("blob");
     const blobUrl = URL.createObjectURL(pdfBlob);
 
-    if (action === "download") doc.save(filename);
-    else if (action === "open" || action === "print") window.open(blobUrl, "_blank");
+    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
 
     return { doc, blob: pdfBlob, blobUrl, filename };
   }
@@ -460,24 +462,58 @@ export async function generateInvoicePDF(
   doc.setTextColor(30, 41, 59);
   doc.text(order.nomor_nota || "-", badgeX + (badgeW / 2), currentY + (11 * scale), { align: "center" });
 
-  // Header Brand Toko (Kiri) dengan batasan maxWidth agar tidak pernah menabrak kotak invoice
+  // Header Brand Toko (Kiri) - Dihitung dinamis dan proporsional agar tidak saling bertabrakan
+  let brandY = currentY + (3.2 * scale);
+
+  // 1. Nama Toko
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13 * scale);
+  doc.setFontSize(12.5 * scale);
   doc.setTextColor(30, 41, 59);
-  doc.text(storeName, headerTextX, currentY + 3.2, { maxWidth: maxHeaderWidth });
+  const nameLines: string[] = doc.splitTextToSize(storeName, maxHeaderWidth);
+  doc.text(nameLines, headerTextX, brandY);
+  brandY += nameLines.length * (4.2 * scale);
 
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(7.8 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text(storeSlogan, headerTextX, currentY + (7.2 * scale), { maxWidth: maxHeaderWidth });
+  // 2. Slogan Toko (Italic)
+  if (storeSlogan) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5 * scale);
+    doc.setTextColor(100, 116, 139);
+    const sloganLines: string[] = doc.splitTextToSize(storeSlogan, maxHeaderWidth);
+    doc.text(sloganLines, headerTextX, brandY);
+    brandY += sloganLines.length * (3.1 * scale);
+  }
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.2 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(storeAddress, headerTextX, currentY + (11 * scale), { maxWidth: maxHeaderWidth });
-  doc.text(`WA: ${storePhone} • Email: ${storeEmail}`, headerTextX, currentY + (14.8 * scale), { maxWidth: maxHeaderWidth });
+  // 3. Alamat Toko
+  if (storeAddress) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.0 * scale);
+    doc.setTextColor(71, 85, 105);
+    const addressLines: string[] = doc.splitTextToSize(storeAddress, maxHeaderWidth);
+    doc.text(addressLines, headerTextX, brandY);
+    brandY += addressLines.length * (2.8 * scale);
+  }
 
-  currentY += 17.5 * scale;
+  // 4. Kontak WA & Email
+  const contactText = [
+    storePhone ? `WA: ${storePhone}` : "",
+    storeEmail ? `Email: ${storeEmail}` : ""
+  ].filter(Boolean).join(" • ");
+  if (contactText) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.0 * scale);
+    doc.setTextColor(71, 85, 105);
+    const contactLines: string[] = doc.splitTextToSize(contactText, maxHeaderWidth);
+    doc.text(contactLines, headerTextX, brandY);
+    brandY += contactLines.length * (2.8 * scale);
+  }
+
+  // Tentukan batas bawah header
+  const headerBottomY = Math.max(
+    brandY,
+    currentY + badgeH,
+    logoData ? currentY + logoBoxSize : currentY + 12
+  );
+  currentY = headerBottomY + (2.5 * scale);
 
   // Garis Pembatas Header
   doc.setDrawColor(226, 232, 240);
@@ -497,17 +533,22 @@ export async function generateInvoicePDF(
   doc.setTextColor(100, 116, 139);
   doc.text("TAGIHAN KEPADA:", col1X, currentY);
 
+  let col1Y = currentY + (4.8 * scale);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5 * scale);
   doc.setTextColor(15, 23, 42);
-  doc.text(order.nama_pelanggan || "Pelanggan Umum", col1X, currentY + (5 * scale));
+  const custNameLines: string[] = doc.splitTextToSize(order.nama_pelanggan || "Pelanggan Umum", colWidth - 4);
+  doc.text(custNameLines, col1X, col1Y);
+  col1Y += custNameLines.length * (4.2 * scale);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5 * scale);
+  doc.setFontSize(8.0 * scale);
   doc.setTextColor(71, 85, 105);
-  doc.text(`No. WA / Telp : ${order.no_wa || "-"}`, col1X, currentY + (9.5 * scale));
+  doc.text(`No. WA / Telp : ${order.no_wa || "-"}`, col1X, col1Y);
+  col1Y += (3.5 * scale);
   if (order.created_by) {
-    doc.text(`Kasir / Admin : ${order.created_by}`, col1X, currentY + (13.8 * scale));
+    doc.text(`Kasir / Admin : ${order.created_by}`, col1X, col1Y);
+    col1Y += (3.5 * scale);
   }
 
   // Kolom Kanan
@@ -516,15 +557,19 @@ export async function generateInvoicePDF(
   doc.setTextColor(100, 116, 139);
   doc.text("DETAIL TRANSAKSI:", col2X, currentY);
 
+  let col2Y = currentY + (4.8 * scale);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5 * scale);
+  doc.setFontSize(8.0 * scale);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Tanggal Order : ${formatTanggal(order.tanggal_order, true)}`, col2X, currentY + (5 * scale));
+  doc.text(`Tanggal Order : ${formatTanggal(order.tanggal_order, true)}`, col2X, col2Y);
+  col2Y += (3.5 * scale);
 
   if (order.tanggal_ambil) {
-    doc.text(`Tanggal Ambil : ${formatTanggal(order.tanggal_ambil, false)}`, col2X, currentY + (9.5 * scale));
+    doc.text(`Tanggal Ambil : ${formatTanggal(order.tanggal_ambil, false)}`, col2X, col2Y);
+    col2Y += (3.5 * scale);
   } else {
-    doc.text(`Metode Bayar  : ${order.metode_bayar || "Cash"}`, col2X, currentY + (9.5 * scale));
+    doc.text(`Metode Bayar  : ${order.metode_bayar || "Cash"}`, col2X, col2Y);
+    col2Y += (3.5 * scale);
   }
 
   // Status Bayar Badge Pill
@@ -548,17 +593,17 @@ export async function generateInvoicePDF(
   const textWidth = doc.getTextWidth(badgeText);
   const badgePillW = Math.max(38 * scale, textWidth + (8 * scale));
   const badgePillX = rightAlignX - badgePillW;
-  const pillBoxY = currentY + (12.5 * scale);
+  const pillBoxY = currentY + (11.0 * scale);
   const pillBoxH = 5.8 * scale;
 
   doc.setFillColor(...badgeBg);
   doc.roundedRect(badgePillX, pillBoxY, badgePillW, pillBoxH, 1.2, 1.2, "F");
 
   doc.setTextColor(...badgeTextCol);
-  // Posisi teks di dalam kotak dibuat agak ke bawah dan proporsional pas di tengah
   doc.text(badgeText, badgePillX + (badgePillW / 2), pillBoxY + (4.0 * scale), { align: "center" });
 
-  currentY += 21 * scale;
+  const metaBottomY = Math.max(col1Y, col2Y, pillBoxY + pillBoxH);
+  currentY = metaBottomY + (3.5 * scale);
 
   // AutoTable Item Pesanan
   const items = order.items && order.items.length > 0
@@ -952,18 +997,39 @@ export async function generateSuratJalanPDF(
   doc.text(`No: SJ-${order.nomor_nota}`, badgeX + (badgeW / 2), currentY + (10.5 * scale), { align: "center" });
 
   // Header Kiri
+  let sjBrandY = currentY + (3.2 * scale);
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13 * scale);
+  doc.setFontSize(12.5 * scale);
   doc.setTextColor(30, 41, 59);
-  doc.text(storeName, headerTextX, currentY + 3.2, { maxWidth: maxHeaderWidth });
+  const sjNameLines: string[] = doc.splitTextToSize(storeName, maxHeaderWidth);
+  doc.text(sjNameLines, headerTextX, sjBrandY);
+  sjBrandY += sjNameLines.length * (4.2 * scale);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(storeAddress, headerTextX, currentY + (7.2 * scale), { maxWidth: maxHeaderWidth });
-  doc.text(`Telp/WA: ${storePhone}`, headerTextX, currentY + (11 * scale), { maxWidth: maxHeaderWidth });
+  if (storeAddress) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2 * scale);
+    doc.setTextColor(71, 85, 105);
+    const sjAddrLines: string[] = doc.splitTextToSize(storeAddress, maxHeaderWidth);
+    doc.text(sjAddrLines, headerTextX, sjBrandY);
+    sjBrandY += sjAddrLines.length * (2.9 * scale);
+  }
 
-  currentY += 17 * scale;
+  if (storePhone) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2 * scale);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Telp/WA: ${storePhone}`, headerTextX, sjBrandY);
+    sjBrandY += (2.9 * scale);
+  }
+
+  const sjHeaderBottomY = Math.max(
+    sjBrandY,
+    currentY + badgeH,
+    logoData ? currentY + logoBoxSize : currentY + 12
+  );
+  currentY = sjHeaderBottomY + (2.5 * scale);
+
   doc.setDrawColor(226, 232, 240);
   doc.line(marginX, currentY, rightAlignX, currentY);
 
@@ -1115,6 +1181,7 @@ export async function generateTandaTerimaPDF(
 
   const storeName = finalSettings?.nama_toko || "JERES STUDIO";
   const storeAddress = finalSettings?.alamat || "Jl. Percetakan Raya No. 88";
+  const storePhone = finalSettings?.no_wa || "0812-3456-7890";
   const rightAlignX = pageWidth - marginX;
   let currentY = 5.5;
 
@@ -1167,17 +1234,39 @@ export async function generateTandaTerimaPDF(
   doc.text(`Ref: ${order.nomor_nota}`, badgeX + (badgeW / 2), currentY + (10.5 * scale), { align: "center" });
 
   // Header Kiri
+  let ttBrandY = currentY + (3.2 * scale);
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13 * scale);
+  doc.setFontSize(12.5 * scale);
   doc.setTextColor(30, 41, 59);
-  doc.text(storeName, headerTextX, currentY + 3.2, { maxWidth: maxHeaderWidth });
+  const ttNameLines: string[] = doc.splitTextToSize(storeName, maxHeaderWidth);
+  doc.text(ttNameLines, headerTextX, ttBrandY);
+  ttBrandY += ttNameLines.length * (4.2 * scale);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(storeAddress, headerTextX, currentY + (7.2 * scale), { maxWidth: maxHeaderWidth });
+  if (storeAddress) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2 * scale);
+    doc.setTextColor(71, 85, 105);
+    const ttAddrLines: string[] = doc.splitTextToSize(storeAddress, maxHeaderWidth);
+    doc.text(ttAddrLines, headerTextX, ttBrandY);
+    ttBrandY += ttAddrLines.length * (2.9 * scale);
+  }
 
-  currentY += 17 * scale;
+  if (storePhone) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2 * scale);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Telp/WA: ${storePhone}`, headerTextX, ttBrandY);
+    ttBrandY += (2.9 * scale);
+  }
+
+  const ttHeaderBottomY = Math.max(
+    ttBrandY,
+    currentY + badgeH,
+    logoData ? currentY + logoBoxSize : currentY + 12
+  );
+  currentY = ttHeaderBottomY + (2.5 * scale);
+
   doc.setDrawColor(226, 232, 240);
   doc.line(marginX, currentY, rightAlignX, currentY);
 
