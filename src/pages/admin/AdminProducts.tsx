@@ -25,6 +25,8 @@ import {
   Building2,
   Settings,
   TrendingUp,
+  LayoutGrid,
+  LayoutList,
 } from "lucide-react";
 import { ImagePreviewLightbox } from "../../components/ImagePreviewLightbox.js";
 import { ManageProductVendorsModal } from "../../components/ManageProductVendorsModal.js";
@@ -36,6 +38,7 @@ export const AdminProducts: React.FC = () => {
   const [search, setSearch] = useState("");
   const [selectedKategori, setSelectedKategori] = useState("all");
   const [sortBy, setSortBy] = useState<"nama" | "hargaAsc" | "hargaDesc">("nama");
+  const [viewMode, setViewMode] = useState<"auto" | "grid" | "table">("auto");
 
   // Margin Thresholds State
   const [marginThresholds, setMarginThresholds] = useState<MarginThresholdSettings>({
@@ -529,11 +532,11 @@ export const AdminProducts: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters & Search Toolbar */}
+      {/* Filters & Search Toolbar with View Switcher */}
       <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
           {/* Search */}
-          <div className="relative">
+          <div className="relative sm:col-span-2 lg:col-span-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
@@ -545,415 +548,477 @@ export const AdminProducts: React.FC = () => {
           </div>
 
           {/* Category Dropdown */}
-          <select
-            value={selectedKategori}
-            onChange={(e) => setSelectedKategori(e.target.value)}
-            className="px-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
-          >
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+          <div className="lg:col-span-3">
+            <select
+              value={selectedKategori}
+              onChange={(e) => setSelectedKategori(e.target.value)}
+              className="w-full px-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Sort By */}
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
-          >
-            <option value="nama">Urutkan: Nama (A-Z)</option>
-            <option value="hargaAsc">Urutkan: Harga Terendah</option>
-            <option value="hargaDesc">Urutkan: Harga Tertinggi</option>
-          </select>
+          <div className="lg:col-span-3">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="w-full px-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+            >
+              <option value="nama">Urutkan: Nama (A-Z)</option>
+              <option value="hargaAsc">Urutkan: Harga Terendah</option>
+              <option value="hargaDesc">Urutkan: Harga Tertinggi</option>
+            </select>
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="sm:col-span-2 lg:col-span-2 flex items-center justify-end">
+            <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  viewMode === "grid" || (viewMode === "auto")
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Tampilan Kartu Responsif (Optimal Tablet & HP)"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Grid</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  viewMode === "table"
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Tampilan Tabel Kompak"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                <span>Tabel</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Products Display: Desktop Table (hidden md:block) & Mobile Card List (block md:hidden) */}
-      
-      {/* 1. Mobile Card List View */}
-      <div className="block md:hidden space-y-3">
-        {filteredAndSortedProducts.length > 0 ? (
-          filteredAndSortedProducts.map((prod) => {
-            const prodImages = Array.isArray(prod.images) && prod.images.length > 0
-              ? prod.images
-              : (prod.gambar_url ? [prod.gambar_url] : []);
-            const coverImg = prodImages[0] || prod.gambar_url;
-            const totalImages = prodImages.length;
-            const defaultVendor = prod.default_vendor;
-            const vendorCount = prod.vendor_count || (prod.product_vendors?.length ?? (defaultVendor ? 1 : 0));
+      {/* Products Display: Responsive Grid & Table */}
 
-            return (
-              <div
-                key={prod.id}
-                className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3"
-              >
-                {/* Header: Image & Basic Details */}
-                <div className="flex items-start gap-3">
-                  {/* Thumbnail with Lightbox */}
-                  {coverImg ? (
-                    <div
-                      onClick={() => handleOpenTableLightbox(prod)}
-                      className="relative w-16 h-16 rounded-xl overflow-hidden shrink-0 group cursor-pointer border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-2xs"
-                      title="Klik untuk melihat preview galeri foto"
-                    >
-                      <img
-                        src={coverImg}
-                        alt={prod.nama_item}
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 active:opacity-100 group-hover:opacity-100 transition-opacity">
-                        <ZoomIn className="w-4 h-4 text-white drop-shadow-sm" />
-                      </div>
-                      {totalImages > 1 && (
-                        <span className="absolute bottom-0 right-0 px-1 py-0.2 bg-slate-900/90 text-white text-[9px] font-bold rounded-tl font-mono border-t border-l border-white/20">
-                          {totalImages}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0 border border-slate-200 dark:border-slate-700">
-                      <Tag className="w-5 h-5" />
-                    </div>
-                  )}
+      {/* 1. Responsive Card Grid (Optimal for Mobile, Tablet & Grid View - No Horizontal Scroll!) */}
+      {(viewMode === "grid" || viewMode === "auto") && (
+        <div className={`${viewMode === "auto" ? "block xl:hidden" : "block"}`}>
+          {filteredAndSortedProducts.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {filteredAndSortedProducts.map((prod) => {
+                const prodImages = Array.isArray(prod.images) && prod.images.length > 0
+                  ? prod.images
+                  : (prod.gambar_url ? [prod.gambar_url] : []);
+                const coverImg = prodImages[0] || prod.gambar_url;
+                const totalImages = prodImages.length;
+                const defaultVendor = prod.default_vendor;
+                const vendorCount = prod.vendor_count || (prod.product_vendors?.length ?? (defaultVendor ? 1 : 0));
 
-                  {/* Info: Title, Category, Price */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1.5 mb-1">
-                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        {prod.kategori}
-                      </span>
-                      <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                        {formatRupiah(prod.harga)}
-                        <span className="text-[10px] text-slate-400 font-sans font-normal"> /{prod.satuan}</span>
-                      </span>
-                    </div>
-
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 leading-tight">
-                      {prod.nama_item}
-                    </h4>
-
-                    {prod.deskripsi && (
-                      <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
-                        {prod.deskripsi}
-                      </p>
-                    )}
-
-                    {totalImages > 1 && (
-                      <button
-                        onClick={() => handleOpenTableLightbox(prod)}
-                        className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 font-semibold hover:underline"
-                      >
-                        <Layers className="w-3 h-3" />
-                        {totalImages} Foto Galeri
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Vendor & Margin Box */}
-                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        <Building2 className="w-3 h-3 text-slate-400" />
-                        <span>Vendor Supplier</span>
-                      </div>
-                      {defaultVendor ? (
-                        <div className="mt-0.5">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                            {defaultVendor.nama_vendor}
-                          </p>
-                          <button
-                            onClick={() => handleOpenVendorModal(prod)}
-                            className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                          >
-                            {vendorCount > 1 ? `${vendorCount} Vendor Terhubung` : "Kelola Vendor"}
-                          </button>
+                return (
+                  <div
+                    key={prod.id}
+                    className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-3 hover:border-indigo-300 dark:hover:border-indigo-800/80 transition-colors"
+                  >
+                    {/* Upper: Image & Basic Details */}
+                    <div className="flex items-start gap-3">
+                      {/* Thumbnail with Lightbox */}
+                      {coverImg ? (
+                        <div
+                          onClick={() => handleOpenTableLightbox(prod)}
+                          className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-xl overflow-hidden shrink-0 group cursor-pointer border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-2xs"
+                          title="Klik untuk melihat preview galeri foto"
+                        >
+                          <img
+                            src={coverImg}
+                            alt={prod.nama_item}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 active:opacity-100 group-hover:opacity-100 transition-opacity">
+                            <ZoomIn className="w-4 h-4 text-white drop-shadow-sm" />
+                          </div>
+                          {totalImages > 1 && (
+                            <span className="absolute bottom-0 right-0 px-1 py-0.2 bg-slate-900/90 text-white text-[9px] font-bold rounded-tl font-mono border-t border-l border-white/20">
+                              {totalImages}
+                            </span>
+                          )}
                         </div>
                       ) : (
-                        <button
-                          onClick={() => handleOpenVendorModal(prod)}
-                          className="mt-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" /> Hubungkan Vendor
-                        </button>
+                        <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0 border border-slate-200 dark:border-slate-700">
+                          <Tag className="w-5 h-5" />
+                        </div>
                       )}
-                    </div>
 
-                    {/* Margin Info on Mobile */}
-                    <div className="shrink-0 text-right">
-                      {renderMarginCell(prod)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer: Quick Status Toggles & Action Buttons */}
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-                  {/* Status Badges / Toggles */}
-                  <div className="flex items-center gap-1.5">
-                    {/* Tampil Publik Toggle */}
-                    <button
-                      onClick={() => handleToggle(prod.id, "tampilkan_harga_publik")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border ${
-                        prod.tampilkan_harga_publik
-                          ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800"
-                          : "text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                      }`}
-                      title={prod.tampilkan_harga_publik ? "Harga publik ditampilkan" : "Harga publik disembunyikan"}
-                    >
-                      {prod.tampilkan_harga_publik ? <Eye className="w-3 h-3 text-emerald-600" /> : <EyeOff className="w-3 h-3" />}
-                      <span>{prod.tampilkan_harga_publik ? "Publik" : "Privat"}</span>
-                    </button>
-
-                    {/* Status Aktif Toggle */}
-                    <button
-                      onClick={() => handleToggle(prod.id, "is_active")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border ${
-                        prod.is_active
-                          ? "text-blue-700 bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800"
-                          : "text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                      }`}
-                      title={prod.is_active ? "Produk Aktif" : "Produk Nonaktif"}
-                    >
-                      {prod.is_active ? <CheckCircle className="w-3 h-3 text-blue-600" /> : <XCircle className="w-3 h-3" />}
-                      <span>{prod.is_active ? "Aktif" : "Nonaktif"}</span>
-                    </button>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleOpenVendorModal(prod)}
-                      className="p-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-slate-700"
-                      title="Kelola Vendor & Harga Modal"
-                    >
-                      <Building2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleOpenEdit(prod)}
-                      className="p-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-slate-700"
-                      title="Edit Produk"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(prod.id, prod.nama_item)}
-                      className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors border border-rose-200 dark:border-rose-800/80"
-                      title="Hapus Produk"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-            Tidak ada produk ditemukan
-          </div>
-        )}
-      </div>
-
-      {/* 2. Desktop Products Table (hidden on mobile) */}
-      <div className="hidden md:block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-semibold uppercase text-slate-500">
-              <tr>
-                <th className="py-3 px-4 w-16 text-center">Gambar</th>
-                <th className="py-3 px-4">Nama Produk & Deskripsi</th>
-                <th className="py-3 px-4">Kategori & Satuan</th>
-                <th className="py-3 px-4 text-right">Harga Resmi</th>
-                <th className="py-3 px-4">Vendor Utama</th>
-                <th className="py-3 px-4">Modal & Margin</th>
-                <th className="py-3 px-4 text-center">Tampil Publik</th>
-                <th className="py-3 px-4 text-center">Status Aktif</th>
-                <th className="py-3 px-4 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {filteredAndSortedProducts.length > 0 ? (
-                filteredAndSortedProducts.map((prod) => {
-                  const prodImages = Array.isArray(prod.images) && prod.images.length > 0
-                    ? prod.images
-                    : (prod.gambar_url ? [prod.gambar_url] : []);
-                  const coverImg = prodImages[0] || prod.gambar_url;
-                  const totalImages = prodImages.length;
-                  const defaultVendor = prod.default_vendor;
-                  const vendorCount = prod.vendor_count || (prod.product_vendors?.length ?? (defaultVendor ? 1 : 0));
-
-                  return (
-                    <tr key={prod.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-4">
-                        {coverImg ? (
-                          <div
-                            onClick={() => handleOpenTableLightbox(prod)}
-                            className="relative w-12 h-12 rounded-lg overflow-hidden group cursor-pointer border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
-                            title="Klik untuk melihat preview galeri foto"
-                          >
-                            <img
-                              src={coverImg}
-                              alt={prod.nama_item}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                              <ZoomIn className="w-4 h-4 text-white drop-shadow-sm" />
-                            </div>
-                            {totalImages > 1 && (
-                              <span className="absolute bottom-0 right-0 px-1 py-0.2 bg-slate-900/90 text-white text-[9px] font-bold rounded-tl font-mono border-t border-l border-white/20">
-                                {totalImages}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
-                            <Tag className="w-4 h-4" />
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <p className="font-semibold text-slate-900 dark:text-white text-xs">{prod.nama_item}</p>
-                        {prod.deskripsi && (
-                          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{prod.deskripsi}</p>
-                        )}
-                        {totalImages > 1 && (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 font-medium">
-                            <Layers className="w-3 h-3" />
-                            {totalImages} Foto Galeri
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex flex-col items-start gap-1">
-                          <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      {/* Info: Title, Category, Price */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1.5 mb-1">
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                             {prod.kategori}
                           </span>
-                          <span className="text-[11px] font-medium text-slate-500">
-                            /{prod.satuan}
+                          <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                            {formatRupiah(prod.harga)}
+                            <span className="text-[10px] text-slate-400 font-sans font-normal"> /{prod.satuan}</span>
                           </span>
                         </div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
-                        {formatRupiah(prod.harga)}
-                      </td>
 
-                      {/* Vendor Column */}
-                      <td className="py-3 px-4">
-                        {defaultVendor ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-900 dark:text-white text-xs">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 leading-tight">
+                          {prod.nama_item}
+                        </h4>
+
+                        {prod.deskripsi && (
+                          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                            {prod.deskripsi}
+                          </p>
+                        )}
+
+                        {totalImages > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTableLightbox(prod)}
+                            className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 font-semibold hover:underline cursor-pointer"
+                          >
+                            <Layers className="w-3 h-3" />
+                            {totalImages} Foto Galeri
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Middle: Vendor & Margin Box */}
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            <Building2 className="w-3 h-3 text-slate-400" />
+                            <span>Vendor Supplier</span>
+                          </div>
+                          {defaultVendor ? (
+                            <div className="mt-0.5">
+                              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                                 {defaultVendor.nama_vendor}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
+                              </p>
                               <button
+                                type="button"
                                 onClick={() => handleOpenVendorModal(prod)}
-                                className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                                className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                               >
-                                <Building2 className="w-3 h-3" />
                                 {vendorCount > 1 ? `${vendorCount} Vendor Terhubung` : "Kelola Vendor"}
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleOpenVendorModal(prod)}
-                            className="text-[11px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <Building2 className="w-3.5 h-3.5" />
-                            <span>+ Hubungkan</span>
-                          </button>
-                        )}
-                      </td>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVendorModal(prod)}
+                              className="mt-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" /> Hubungkan Vendor
+                            </button>
+                          )}
+                        </div>
 
-                      {/* Modal & Margin Column */}
-                      <td className="py-3 px-4">
-                        {renderMarginCell(prod)}
-                      </td>
+                        {/* Margin Info */}
+                        <div className="shrink-0 text-right">
+                          {renderMarginCell(prod)}
+                        </div>
+                      </div>
+                    </div>
 
-                      {/* Tampil Publik Toggle */}
-                      <td className="py-3 px-4 text-center">
+                    {/* Footer: Quick Status Toggles & Action Buttons */}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      {/* Status Badges / Toggles */}
+                      <div className="flex items-center gap-1.5">
+                        {/* Tampil Publik Toggle */}
                         <button
+                          type="button"
                           onClick={() => handleToggle(prod.id, "tampilkan_harga_publik")}
-                          className={`p-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border ${
                             prod.tampilkan_harga_publik
-                              ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40"
-                              : "text-slate-400 bg-slate-100 dark:bg-slate-800"
+                              ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800"
+                              : "text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                           }`}
-                          title={prod.tampilkan_harga_publik ? "Harga ditampilkan di website" : "Harga disembunyikan"}
+                          title={prod.tampilkan_harga_publik ? "Harga publik ditampilkan" : "Harga publik disembunyikan"}
                         >
-                          {prod.tampilkan_harga_publik ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          {prod.tampilkan_harga_publik ? <Eye className="w-3 h-3 text-emerald-600" /> : <EyeOff className="w-3 h-3" />}
+                          <span>{prod.tampilkan_harga_publik ? "Publik" : "Privat"}</span>
                         </button>
-                      </td>
 
-                      {/* Status Aktif Toggle */}
-                      <td className="py-3 px-4 text-center">
+                        {/* Status Aktif Toggle */}
                         <button
+                          type="button"
                           onClick={() => handleToggle(prod.id, "is_active")}
-                          className={`p-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border ${
                             prod.is_active
-                              ? "text-blue-700 bg-blue-50 dark:bg-blue-950/40"
-                              : "text-slate-400 bg-slate-100 dark:bg-slate-800"
+                              ? "text-blue-700 bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800"
+                              : "text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                           }`}
                           title={prod.is_active ? "Produk Aktif" : "Produk Nonaktif"}
                         >
-                          {prod.is_active ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          {prod.is_active ? <CheckCircle className="w-3 h-3 text-blue-600" /> : <XCircle className="w-3 h-3" />}
+                          <span>{prod.is_active ? "Aktif" : "Nonaktif"}</span>
                         </button>
-                      </td>
+                      </div>
 
-                      {/* Action Buttons */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {/* Kelola Vendor Quick Action */}
-                          <button
-                            onClick={() => handleOpenVendorModal(prod)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
-                            title="Kelola Vendor & Harga Modal"
-                          >
-                            <Building2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEdit(prod)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
-                            title="Edit Produk"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(prod.id, prod.nama_item)}
-                            className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
-                            title="Hapus Produk"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    Tidak ada produk ditemukan
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      {/* Actions */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenVendorModal(prod)}
+                          className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-slate-700"
+                          title="Kelola Vendor & Harga Modal"
+                        >
+                          <Building2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(prod)}
+                          className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-slate-700"
+                          title="Edit Produk"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(prod.id, prod.nama_item)}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors border border-rose-200 dark:border-rose-800/80"
+                          title="Hapus Produk"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+              Tidak ada produk ditemukan
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* 2. Responsive Table View (Shown on Widescreen Desktop or when Table view is selected) */}
+      {(viewMode === "table" || viewMode === "auto") && (
+        <div className={`${viewMode === "auto" ? "hidden xl:block" : "block"} bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm`}>
+          <div className="w-full overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-semibold uppercase text-slate-500">
+                <tr>
+                  <th className="py-3 px-3 w-16 text-center">Gambar</th>
+                  <th className="py-3 px-3">Nama Produk & Deskripsi</th>
+                  <th className="py-3 px-3">Kategori & Satuan</th>
+                  <th className="py-3 px-3 text-right">Harga Resmi</th>
+                  <th className="py-3 px-3">Vendor Utama</th>
+                  <th className="py-3 px-3">Modal & Margin</th>
+                  <th className="py-3 px-3 text-center">Tampil Publik</th>
+                  <th className="py-3 px-3 text-center">Status Aktif</th>
+                  <th className="py-3 px-3 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {filteredAndSortedProducts.length > 0 ? (
+                  filteredAndSortedProducts.map((prod) => {
+                    const prodImages = Array.isArray(prod.images) && prod.images.length > 0
+                      ? prod.images
+                      : (prod.gambar_url ? [prod.gambar_url] : []);
+                    const coverImg = prodImages[0] || prod.gambar_url;
+                    const totalImages = prodImages.length;
+                    const defaultVendor = prod.default_vendor;
+                    const vendorCount = prod.vendor_count || (prod.product_vendors?.length ?? (defaultVendor ? 1 : 0));
+
+                    return (
+                      <tr key={prod.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-3">
+                          {coverImg ? (
+                            <div
+                              onClick={() => handleOpenTableLightbox(prod)}
+                              className="relative w-12 h-12 rounded-lg overflow-hidden group cursor-pointer border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 mx-auto"
+                              title="Klik untuk melihat preview galeri foto"
+                            >
+                              <img
+                                src={coverImg}
+                                alt={prod.nama_item}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <ZoomIn className="w-4 h-4 text-white drop-shadow-sm" />
+                              </div>
+                              {totalImages > 1 && (
+                                <span className="absolute bottom-0 right-0 px-1 py-0.2 bg-slate-900/90 text-white text-[9px] font-bold rounded-tl font-mono border-t border-l border-white/20">
+                                  {totalImages}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mx-auto">
+                              <Tag className="w-4 h-4" />
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 max-w-[220px]">
+                          <p className="font-semibold text-slate-900 dark:text-white text-xs leading-snug">{prod.nama_item}</p>
+                          {prod.deskripsi && (
+                            <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{prod.deskripsi}</p>
+                          )}
+                          {totalImages > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTableLightbox(prod)}
+                              className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 font-medium hover:underline cursor-pointer"
+                            >
+                              <Layers className="w-3 h-3" />
+                              {totalImages} Foto Galeri
+                            </button>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              {prod.kategori}
+                            </span>
+                            <span className="text-[11px] font-medium text-slate-500">
+                              /{prod.satuan}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs whitespace-nowrap">
+                          {formatRupiah(prod.harga)}
+                        </td>
+
+                        {/* Vendor Column */}
+                        <td className="py-3 px-3 min-w-[140px]">
+                          {defaultVendor ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-900 dark:text-white text-xs truncate max-w-[150px] block">
+                                  {defaultVendor.nama_vendor}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenVendorModal(prod)}
+                                  className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                                >
+                                  <Building2 className="w-3 h-3" />
+                                  {vendorCount > 1 ? `${vendorCount} Vendor Terhubung` : "Kelola Vendor"}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVendorModal(prod)}
+                              className="text-[11px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Building2 className="w-3.5 h-3.5" />
+                              <span>+ Hubungkan</span>
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Modal & Margin Column */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {renderMarginCell(prod)}
+                        </td>
+
+                        {/* Tampil Publik Toggle */}
+                        <td className="py-3 px-3 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleToggle(prod.id, "tampilkan_harga_publik")}
+                            className={`p-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                              prod.tampilkan_harga_publik
+                                ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40"
+                                : "text-slate-400 bg-slate-100 dark:bg-slate-800"
+                            }`}
+                            title={prod.tampilkan_harga_publik ? "Harga ditampilkan di website" : "Harga disembunyikan"}
+                          >
+                            {prod.tampilkan_harga_publik ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          </button>
+                        </td>
+
+                        {/* Status Aktif Toggle */}
+                        <td className="py-3 px-3 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleToggle(prod.id, "is_active")}
+                            className={`p-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                              prod.is_active
+                                ? "text-blue-700 bg-blue-50 dark:bg-blue-950/40"
+                                : "text-slate-400 bg-slate-100 dark:bg-slate-800"
+                            }`}
+                            title={prod.is_active ? "Produk Aktif" : "Produk Nonaktif"}
+                          >
+                            {prod.is_active ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          </button>
+                        </td>
+
+                        {/* Action Buttons */}
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Kelola Vendor Quick Action */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVendorModal(prod)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
+                              title="Kelola Vendor & Harga Modal"
+                            >
+                              <Building2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(prod)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
+                              title="Edit Produk"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(prod.id, prod.nama_item)}
+                              className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
+                              title="Hapus Produk"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                      Tidak ada produk ditemukan
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Product Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden animate-in fade-in">
+          <div className="w-full max-w-2xl max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            {/* Header Modal - Fixed at top */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50 shrink-0">
               <div>
                 <h3 className="font-bold text-slate-900 dark:text-white text-base">
                   {editingProduct ? "Edit Item Produk" : "Tambah Item Produk Baru"}
@@ -963,21 +1028,23 @@ export const AdminProducts: React.FC = () => {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {formError && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden min-h-0">
+              {/* Modal Body - Scrollable */}
+              <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+                {formError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -1321,28 +1388,29 @@ export const AdminProducts: React.FC = () => {
                   <span className="font-semibold text-slate-800 dark:text-slate-200">Tampilkan di Web Publik</span>
                 </label>
               </div>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer"
-                >
-                  {saving ? "Menyimpan..." : "Simpan Produk"}
-                </button>
-              </div>
-            </form>
-          </div>
+            {/* Action Buttons - Fixed at bottom */}
+            <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors cursor-pointer"
+              >
+                {saving ? "Menyimpan..." : "Simpan Produk"}
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Lightbox Preview Modal for Admin Table */}
       <ImagePreviewLightbox

@@ -38,6 +38,9 @@ import {
   Coins,
   Package,
   Calculator,
+  ArrowRightLeft,
+  PiggyBank,
+  Target,
 } from "lucide-react";
 import { api } from "../../lib/api.js";
 import {
@@ -49,11 +52,16 @@ import {
   KantongBalances,
   HppBreakdown,
   ScannedReceiptItem,
+  SavingsAngsuranTarget,
 } from "../../types/index.js";
 import { formatRupiah, formatTanggal } from "../../lib/utils.js";
 import { useAuth } from "../../lib/auth.js";
 import { ReceiptScannerModal } from "../../components/ReceiptScannerModal.js";
 import { CategoryManagerModal } from "../../components/CategoryManagerModal.js";
+import { TransferKantongModal } from "../../components/TransferKantongModal.js";
+import { SavingsTargetModal } from "../../components/SavingsTargetModal.js";
+import { DepositTargetModal } from "../../components/DepositTargetModal.js";
+import { SavingsAngsuranSection } from "../../components/SavingsAngsuranSection.js";
 
 interface AdminFinanceProps {
   settings?: StoreSettings | null;
@@ -135,6 +143,19 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Active Main Finance View Tab
+  const [activeFinanceTab, setActiveFinanceTab] = useState<"transactions" | "savings">("transactions");
+
+  // Savings & Angsuran Targets State
+  const [savingsTargets, setSavingsTargets] = useState<SavingsAngsuranTarget[]>([]);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferSource, setTransferSource] = useState<KantongKasType>("margin");
+  const [transferTargetId, setTransferTargetId] = useState<number | undefined>(undefined);
+  const [savingsTargetModalOpen, setSavingsTargetModalOpen] = useState(false);
+  const [targetToEdit, setTargetToEdit] = useState<SavingsAngsuranTarget | null>(null);
+  const [depositModalOpen, setDepositModalOpen] = useState(false);
+  const [depositTarget, setDepositTarget] = useState<SavingsAngsuranTarget | null>(null);
+
   // Scanner Modal State
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
 
@@ -154,6 +175,18 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce search query input (250ms) to avoid lagging API flood
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Request sequencing ref to discard stale responses
+  const activeRequestIdRef = React.useRef(0);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -282,8 +315,25 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     }));
   };
 
-  // Load Data
+  // Load Categories (separate from high-frequency transaction updates)
+  const loadCategories = async () => {
+    try {
+      const catRes = await api.getCategories();
+      setAllCategories(catRes.categories || []);
+      setIncomeCategories(catRes.incomeCategories || []);
+      setExpenseCategories(catRes.expenseCategories || []);
+    } catch (err: any) {
+      console.error("Failed to load categories:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  // Load Data with request sequencing & date filtering in summary
   const loadFinanceData = async () => {
+    const currentRequestId = ++activeRequestIdRef.current;
     try {
       setRefreshing(true);
 
@@ -313,7 +363,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         end = customEndDate;
       }
 
-      const [txRes, sumRes, catRes] = await Promise.all([
+      const [txRes, sumRes, savRes] = await Promise.all([
         api.getTransactions({
           tipe: typeFilter !== "all" ? typeFilter : undefined,
           kantong: kantongFilter !== "all" ? kantongFilter : undefined,
@@ -321,22 +371,31 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           metode: methodFilter !== "all" ? methodFilter : undefined,
           startDate: start || undefined,
           endDate: end || undefined,
-          search: searchQuery.trim() || undefined,
+          search: debouncedSearch || undefined,
         }),
-        api.getTransactionSummary(kantongFilter !== "all" ? kantongFilter : undefined),
-        api.getCategories(),
+        api.getTransactionSummary({
+          kantong: kantongFilter !== "all" ? kantongFilter : undefined,
+          startDate: start || undefined,
+          endDate: end || undefined,
+        }),
+        api.getSavingsTargets().catch(() => ({ targets: [] })),
       ]);
 
-      setTransactions(txRes.transactions || []);
-      setSummary(sumRes.summary || null);
-      setAllCategories(catRes.categories || []);
-      setIncomeCategories(catRes.incomeCategories || []);
-      setExpenseCategories(catRes.expenseCategories || []);
+      // Only apply update if this is the newest request
+      if (currentRequestId === activeRequestIdRef.current) {
+        setTransactions(txRes.transactions || []);
+        setSummary(sumRes.summary || null);
+        setSavingsTargets(savRes?.targets || []);
+      }
     } catch (err: any) {
-      console.error("Failed to load finance data:", err);
+      if (currentRequestId === activeRequestIdRef.current) {
+        console.error("Failed to load finance data:", err);
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (currentRequestId === activeRequestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -350,7 +409,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     dateRangeFilter,
     customStartDate,
     customEndDate,
-    searchQuery,
+    debouncedSearch,
   ]);
 
   // Open Standard Create Modal
@@ -626,7 +685,8 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       "Kantong Kas",
       "Kategori",
       "Nominal (Rp)",
-      "Tanggal",
+      "Tanggal Transaksi",
+      "Tanggal Input Dibuat",
       "Metode Pembayaran",
       "Keterangan",
       "Referensi",
@@ -639,6 +699,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       `"${t.kategori.replace(/"/g, '""')}"`,
       t.nominal,
       `"${new Date(t.tanggal).toLocaleString("id-ID")}"`,
+      `"${new Date(t.created_at || t.tanggal).toLocaleString("id-ID")}"`,
       `"${t.metode_pembayaran}"`,
       `"${t.keterangan.replace(/"/g, '""')}"`,
       `"${(t.referensi || "-").replace(/"/g, '""')}"`,
@@ -825,6 +886,37 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         </div>
       )}
 
+      {/* Primary Finance Navigation Tabs */}
+      <div className="flex items-center gap-2 p-1 bg-slate-200/60 dark:bg-slate-800/80 rounded-2xl border border-slate-300/60 dark:border-slate-700/60 w-fit">
+        <button
+          onClick={() => setActiveFinanceTab("transactions")}
+          className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeFinanceTab === "transactions"
+              ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200/80 dark:border-slate-700"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+          }`}
+        >
+          <Coins className="w-4 h-4" />
+          <span>Mutasi Kas & 5 Kantong</span>
+        </button>
+        <button
+          onClick={() => setActiveFinanceTab("savings")}
+          className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeFinanceTab === "savings"
+              ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200/80 dark:border-slate-700"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+          }`}
+        >
+          <Target className="w-4 h-4 text-indigo-500" />
+          <span>Rencana Tabungan & Angsuran</span>
+          {savingsTargets.length > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-full">
+              {savingsTargets.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* 5 KANTONG CARDS SECTION (REPLACES SINGLE SALDO BERSIH) */}
       <div className="space-y-2.5">
         {/* Top Mini Banner: Grand Total Kas & Filter Kantong */}
@@ -847,39 +939,53 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
             </div>
           </div>
 
-          {/* Quick Filter Pill by Kantong */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
-            <span className="text-[11px] font-semibold text-slate-400 mr-1 shrink-0 flex items-center gap-1">
-              <Filter className="w-3 h-3" />
-              Filter Kantong:
-            </span>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setKantongFilter("all")}
-              className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 cursor-pointer transition-all ${
-                kantongFilter === "all"
-                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
-              }`}
+              onClick={() => {
+                setTransferSource("margin");
+                setTransferTargetId(undefined);
+                setTransferModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
-              Semua Kantong
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Pindah Saldo</span>
             </button>
-            {(Object.keys(KANTONG_CONFIG) as KantongKasType[]).map((kKey) => {
-              const cfg = KANTONG_CONFIG[kKey];
-              const isSelected = kantongFilter === kKey;
-              return (
-                <button
-                  key={kKey}
-                  onClick={() => setKantongFilter(isSelected ? "all" : kKey)}
-                  className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 cursor-pointer transition-all flex items-center gap-1 ${
-                    isSelected
-                      ? "bg-indigo-600 text-white shadow-xs"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
-                  }`}
-                >
-                  <span>{cfg.shortLabel}</span>
-                </button>
-              );
-            })}
+
+            {/* Quick Filter Pill by Kantong */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
+              <span className="text-[11px] font-semibold text-slate-400 mr-1 shrink-0 flex items-center gap-1">
+                <Filter className="w-3 h-3" />
+                Filter Kantong:
+              </span>
+              <button
+                onClick={() => setKantongFilter("all")}
+                className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 cursor-pointer transition-all ${
+                  kantongFilter === "all"
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                }`}
+              >
+                Semua Kantong
+              </button>
+              {(Object.keys(KANTONG_CONFIG) as KantongKasType[]).map((kKey) => {
+                const cfg = KANTONG_CONFIG[kKey];
+                const isSelected = kantongFilter === kKey;
+                return (
+                  <button
+                    key={kKey}
+                    onClick={() => setKantongFilter(isSelected ? "all" : kKey)}
+                    className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 cursor-pointer transition-all flex items-center gap-1 ${
+                      isSelected
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                    }`}
+                  >
+                    <span>{cfg.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -957,38 +1063,53 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         </div>
       </div>
 
-      {/* TWO-COLUMN LAYOUT: Desktop/Tablet 2 columns, Mobile 1 column */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* LEFT COLUMN: Fast Action Buttons, AI Scanner, Category Breakdown */}
-        <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
-          {/* Action Buttons in Left Column: Standard Masuk/Keluar + Auto Allocate Order */}
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+      {/* VIEW 1: TRANSACTIONS & 5 KANTONG MUTATION */}
+      {activeFinanceTab === "transactions" ? (
+        /* TWO-COLUMN LAYOUT: Desktop/Tablet 2 columns, Mobile 1 column */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* LEFT COLUMN: Fast Action Buttons, AI Scanner, Category Breakdown */}
+          <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
+            {/* Action Buttons in Left Column: Standard Masuk/Keluar + Auto Allocate Order + Transfer */}
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleOpenCreateModal("masuk")}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Pemasukan</span>
+                </button>
+                <button
+                  onClick={() => handleOpenCreateModal("keluar")}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+                >
+                  <Minus className="w-4 h-4" />
+                  <span>Pengeluaran</span>
+                </button>
+              </div>
+
+              {/* Transfer Saldo Antar Kantong Button */}
               <button
-                onClick={() => handleOpenCreateModal("masuk")}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+                onClick={() => {
+                  setTransferSource("margin");
+                  setTransferTargetId(undefined);
+                  setTransferModalOpen(true);
+                }}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700 rounded-xl shadow-xs transition-all cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>Pemasukan</span>
+                <ArrowRightLeft className="w-4 h-4 text-indigo-500" />
+                <span>🔄 Pindah Saldo Antar Kantong</span>
               </button>
+
+              {/* Special Button: Auto Allocate Order (5 Kantong HPP Splitting) */}
               <button
-                onClick={() => handleOpenCreateModal("keluar")}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-all hover:shadow cursor-pointer"
+                onClick={handleOpenAutoAllocateModal}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xs transition-all cursor-pointer"
               >
-                <Minus className="w-4 h-4" />
-                <span>Pengeluaran</span>
+                <Layers className="w-4 h-4 text-indigo-600" />
+                <span>⚡ Alokasikan Order Cetak (5 Kantong HPP)</span>
               </button>
             </div>
-
-            {/* Special Button: Auto Allocate Order (5 Kantong HPP Splitting) */}
-            <button
-              onClick={handleOpenAutoAllocateModal}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <Layers className="w-4 h-4 text-indigo-600" />
-              <span>⚡ Alokasikan Order Cetak (5 Kantong HPP)</span>
-            </button>
-          </div>
 
           {/* AI Smart Scanner Banner (Compact) */}
           <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-900 via-indigo-950 to-purple-950 text-white shadow-xs border border-indigo-800/40 relative overflow-hidden flex items-center justify-between gap-3">
@@ -1330,9 +1451,9 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                             )}
                           </div>
 
-                          {/* Subtext: Tanggal, Jam, Metode & Kasir */}
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                            <span>{formatTanggal(tx.tanggal)}</span>
+                          {/* Subtext: Tanggal, Jam, Metode, Kasir, & Tgl Input Dibuat */}
+                          <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                            <span title="Tanggal Transaksi / Nota">{formatTanggal(tx.tanggal)}</span>
                             <span className="text-slate-300 dark:text-slate-600">•</span>
                             <span className="text-[10px] text-slate-400 font-mono">{timeStr} WIB</span>
                             <span className="text-slate-300 dark:text-slate-600">•</span>
@@ -1345,6 +1466,14 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                                 <span className="text-slate-500">{tx.created_by}</span>
                               </>
                             )}
+                            <span className="text-slate-300 dark:text-slate-600">•</span>
+                            <span
+                              className="text-[10px] text-slate-500 dark:text-slate-400 font-mono inline-flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60"
+                              title="Waktu data diinput ke sistem"
+                            >
+                              <Calendar className="w-2.5 h-2.5 text-indigo-500" />
+                              Input: {formatTanggal(tx.created_at || tx.tanggal, true)} WIB
+                            </span>
                           </div>
                         </div>
 
@@ -1404,7 +1533,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                           )}
 
                           {/* Detail Grid */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-[11px]">
                             <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/60 dark:border-slate-800">
                               <span className="text-[10px] text-slate-400 font-semibold block uppercase">
                                 Kantong Kas
@@ -1435,6 +1564,15 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                               </span>
                               <span className="font-mono text-slate-800 dark:text-slate-200">
                                 {tx.referensi || "-"}
+                              </span>
+                            </div>
+                            <div className="col-span-2 sm:col-span-1 bg-white dark:bg-slate-900 p-2 rounded-lg border border-indigo-100 dark:border-indigo-950/80 bg-gradient-to-br from-indigo-50/30 to-transparent">
+                              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold block uppercase flex items-center gap-1">
+                                <Calendar className="w-3 h-3 text-indigo-500" />
+                                Tgl Input Dibuat
+                              </span>
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-[11px] block mt-0.5">
+                                {formatTanggal(tx.created_at || tx.tanggal, true)} WIB
                               </span>
                             </div>
                           </div>
@@ -1524,6 +1662,48 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           </div>
         </div>
       </div>
+      ) : (
+        /* VIEW 2: SAVINGS & ANGSURAN TARGETS DASHBOARD */
+        <SavingsAngsuranSection
+          targets={savingsTargets}
+          kantongBalances={balances}
+          onRefresh={loadFinanceData}
+          onOpenCreateModal={() => {
+            setTargetToEdit(null);
+            setSavingsTargetModalOpen(true);
+          }}
+          onOpenAddTarget={() => {
+            setTargetToEdit(null);
+            setSavingsTargetModalOpen(true);
+          }}
+          onOpenEditModal={(target) => {
+            setTargetToEdit(target);
+            setSavingsTargetModalOpen(true);
+          }}
+          onOpenEditTarget={(target) => {
+            setTargetToEdit(target);
+            setSavingsTargetModalOpen(true);
+          }}
+          onOpenDepositModal={(target) => {
+            setDepositTarget(target);
+            setDepositModalOpen(true);
+          }}
+          onOpenDeposit={(target) => {
+            setDepositTarget(target);
+            setDepositModalOpen(true);
+          }}
+          onOpenTransferModal={(sourceKantong, targetId) => {
+            setTransferSource(sourceKantong || "margin");
+            setTransferTargetId(targetId);
+            setTransferModalOpen(true);
+          }}
+          onOpenTransfer={(sourceKantong, targetId) => {
+            setTransferSource(sourceKantong || "margin");
+            setTransferTargetId(targetId);
+            setTransferModalOpen(true);
+          }}
+        />
+      )}
 
       {/* MODAL: CREATE & EDIT TRANSACTION (STANDARD OR AUTO-ALLOCATE) */}
       {modalOpen && (
@@ -2307,7 +2487,53 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         isOpen={categoryModalOpen}
         onClose={() => setCategoryModalOpen(false)}
         categories={allCategories}
-        onCategoriesChanged={loadFinanceData}
+        onCategoriesChanged={() => {
+          loadCategories();
+          loadFinanceData();
+        }}
+      />
+
+      {/* Transfer Kantong Modal */}
+      <TransferKantongModal
+        isOpen={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        onSuccess={(msg) => {
+          setSuccessMessage(msg);
+          loadFinanceData();
+        }}
+        kantongBalances={balances}
+        defaultSource={transferSource}
+        defaultTargetPlanId={transferTargetId}
+        savingsTargets={savingsTargets}
+      />
+
+      {/* Savings & Angsuran Target Create/Edit Modal */}
+      <SavingsTargetModal
+        isOpen={savingsTargetModalOpen}
+        onClose={() => {
+          setSavingsTargetModalOpen(false);
+          setTargetToEdit(null);
+        }}
+        onSuccess={(msg) => {
+          setSuccessMessage(msg);
+          loadFinanceData();
+        }}
+        targetToEdit={targetToEdit}
+      />
+
+      {/* Deposit Target Modal */}
+      <DepositTargetModal
+        isOpen={depositModalOpen}
+        onClose={() => {
+          setDepositModalOpen(false);
+          setDepositTarget(null);
+        }}
+        onSuccess={(msg) => {
+          setSuccessMessage(msg);
+          loadFinanceData();
+        }}
+        target={depositTarget}
+        kantongBalances={balances}
       />
     </div>
   );

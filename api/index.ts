@@ -33,6 +33,8 @@ import {
   persistDeleteCategory,
   persistPurchase,
   persistDeletePurchase,
+  persistSavingsTarget,
+  persistDeleteSavingsTarget,
 } from "../src/db/neonService.js";
 
 const app = express();
@@ -2274,6 +2276,23 @@ function inferKantongKas(kategori: string, tipe: "masuk" | "keluar"): "modal" | 
   return "overhead";
 }
 
+// Robust normalizer for Kantong Kas (handles casing, spaces, aliases, fallbacks)
+function normalizeKantongKas(
+  kantong: any,
+  kategori: string,
+  tipe: "masuk" | "keluar"
+): "modal" | "overhead" | "gaji_saya" | "gaji_karyawan" | "margin" {
+  if (kantong && typeof kantong === "string") {
+    const clean = kantong.toLowerCase().trim().replace(/[\s-]+/g, "_");
+    if (clean === "modal") return "modal";
+    if (clean === "overhead") return "overhead";
+    if (clean === "gaji_saya" || clean === "gajisaya" || clean === "pribadi" || clean === "owner") return "gaji_saya";
+    if (clean === "gaji_karyawan" || clean === "gajikaryawan" || clean === "staff" || clean === "karyawan") return "gaji_karyawan";
+    if (clean === "margin" || clean === "profit" || clean === "laba") return "margin";
+  }
+  return inferKantongKas(kategori, tipe);
+}
+
 // Logic pemotongan diskon & alokasi HPP ke 5 kantong
 function alokasikanOrder(
   breakdownHPP: {
@@ -2323,7 +2342,7 @@ function alokasikanOrder(
   };
 }
 
-// Get Transactions List with Filters (including Kantong Kas)
+// Get Transactions List with Fast Filters & Map Enrichment
 app.get("/api/transactions", authenticateToken, (req: Request, res: Response) => {
   const { tipe, kategori, kantong, startDate, endDate, search, metode } = req.query;
   let list = [...(memoryDb.transactions || [])];
@@ -2333,15 +2352,16 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
   }
 
   if (kategori && kategori !== "all") {
-    list = list.filter((t) => t.kategori.toLowerCase() === (kategori as string).toLowerCase());
+    list = list.filter((t) => t.kategori && t.kategori.toLowerCase() === (kategori as string).toLowerCase());
   }
 
   if (kantong && kantong !== "all") {
-    list = list.filter((t) => (t.kantong || inferKantongKas(t.kategori, t.tipe)) === kantong);
+    const targetKantong = String(kantong).toLowerCase().trim();
+    list = list.filter((t) => normalizeKantongKas(t.kantong, t.kategori, t.tipe) === targetKantong);
   }
 
   if (metode && metode !== "all") {
-    list = list.filter((t) => t.metode_pembayaran.toLowerCase() === (metode as string).toLowerCase());
+    list = list.filter((t) => t.metode_pembayaran && t.metode_pembayaran.toLowerCase() === (metode as string).toLowerCase());
   }
 
   if (startDate) {
@@ -2357,39 +2377,59 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
   }
 
   if (search) {
-    const q = (search as string).toLowerCase();
+    const q = (search as string).toLowerCase().trim();
     list = list.filter(
       (t) =>
-        t.keterangan.toLowerCase().includes(q) ||
-        t.kategori.toLowerCase().includes(q) ||
+        (t.keterangan && t.keterangan.toLowerCase().includes(q)) ||
+        (t.kategori && t.kategori.toLowerCase().includes(q)) ||
         (t.referensi && t.referensi.toLowerCase().includes(q)) ||
         (t.created_by && t.created_by.toLowerCase().includes(q)) ||
-        t.metode_pembayaran.toLowerCase().includes(q) ||
+        (t.metode_pembayaran && t.metode_pembayaran.toLowerCase().includes(q)) ||
         (t.kantong && t.kantong.toLowerCase().includes(q))
     );
   }
 
   list.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
 
+  // Fast pre-indexed Hash Maps for O(1) lookups during enrichment
+  const ordersMap = new Map<string, any>();
+  (memoryDb.orders || []).forEach((o) => {
+    if (o.nomor_nota) ordersMap.set(o.nomor_nota.toLowerCase().trim(), o);
+  });
+
+  const orderItemsMap = new Map<number, any[]>();
+  (memoryDb.orderItems || []).forEach((oi) => {
+    const cur = orderItemsMap.get(oi.order_id) || [];
+    cur.push(oi);
+    orderItemsMap.set(oi.order_id, cur);
+  });
+
+  const purchaseMap = new Map<string, any>();
+  (memoryDb.purchaseHistory || []).forEach((p) => {
+    if (p.nomor_nota) purchaseMap.set(p.nomor_nota.toLowerCase().trim(), p);
+    purchaseMap.set(`kulakan #${p.id}`.toLowerCase(), p);
+  });
+
   // Enrich transactions with items if missing
   const enrichedList = list.map((t) => {
+    const normalizedK = normalizeKantongKas(t.kantong, t.kategori, t.tipe);
+    const baseTx = { ...t, kantong: normalizedK };
+
     if (t.items && Array.isArray(t.items) && t.items.length > 0) {
-      return t;
+      return baseTx;
     }
 
-    // 1. Try matching with orders
+    // 1. Try matching with orders via O(1) Map
     if (t.referensi) {
-      const cleanRef = t.referensi.trim();
-      const matchedOrder = (memoryDb.orders || []).find(
-        (o) => o.nomor_nota && o.nomor_nota.toLowerCase() === cleanRef.toLowerCase()
-      );
+      const cleanRef = t.referensi.toLowerCase().trim();
+      const matchedOrder = ordersMap.get(cleanRef);
       if (matchedOrder) {
-        const orderItems = (memoryDb.orderItems || []).filter((oi) => oi.order_id === matchedOrder.id);
+        const orderItems = orderItemsMap.get(matchedOrder.id) || [];
         if (orderItems.length > 0) {
           return {
-            ...t,
+            ...baseTx,
             items: orderItems.map((oi) => ({
-              nama_item: oi.nama_produk || "Item Order",
+              nama_item: oi.nama_item || "Item Order",
               qty: Number(oi.qty) || 1,
               harga_satuan: Number(oi.harga_satuan) || 0,
               subtotal: Number(oi.subtotal) || (Number(oi.qty) || 1) * (Number(oi.harga_satuan) || 0),
@@ -2398,15 +2438,11 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
         }
       }
 
-      // 2. Try matching with purchase history
-      const matchedPurchase = (memoryDb.purchaseHistory || []).find(
-        (p) =>
-          (p.nomor_nota && p.nomor_nota.toLowerCase() === cleanRef.toLowerCase()) ||
-          `Kulakan #${p.id}`.toLowerCase() === cleanRef.toLowerCase()
-      );
+      // 2. Try matching with purchase history via O(1) Map
+      const matchedPurchase = purchaseMap.get(cleanRef);
       if (matchedPurchase) {
         return {
-          ...t,
+          ...baseTx,
           items: [
             {
               nama_item: matchedPurchase.nama_barang,
@@ -2421,7 +2457,7 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
 
     // 3. Fallback item from transaction description & nominal
     return {
-      ...t,
+      ...baseTx,
       items: [
         {
           nama_item: t.keterangan || t.kategori || "Transaksi Kas",
@@ -2438,7 +2474,7 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
 
 // Get Financial Summary (KPI, Category Breakdown & 5-Pocket Balances)
 app.get("/api/transactions/summary", authenticateToken, (req: Request, res: Response) => {
-  const { kantong } = req.query;
+  const { kantong, startDate, endDate } = req.query;
   const transactions = memoryDb.transactions || [];
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -2449,7 +2485,7 @@ app.get("/api/transactions/summary", authenticateToken, (req: Request, res: Resp
   let pemasukanBulanIni = 0;
   let pengeluaranBulanIni = 0;
 
-  // 5 Kantong Balances Trackers
+  // 5 Kantong Balances Trackers (All-Time Cash Position)
   const kantongBalances = {
     modal: { saldo: 0, masuk: 0, keluar: 0 },
     overhead: { saldo: 0, masuk: 0, keluar: 0 },
@@ -2461,13 +2497,19 @@ app.get("/api/transactions/summary", authenticateToken, (req: Request, res: Resp
   const incomeCatMap: Record<string, { total: number; count: number }> = {};
   const expenseCatMap: Record<string, { total: number; count: number }> = {};
 
+  const startBound = startDate ? new Date(startDate as string) : null;
+  if (startBound) startBound.setHours(0, 0, 0, 0);
+
+  const endBound = endDate ? new Date(endDate as string) : null;
+  if (endBound) endBound.setHours(23, 59, 59, 999);
+
   transactions.forEach((t) => {
     const nominal = Number(t.nominal) || 0;
     const tDate = new Date(t.tanggal);
     const isThisMonth = tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
-    const kType = (t.kantong as keyof typeof kantongBalances) || inferKantongKas(t.kategori, t.tipe);
+    const kType = normalizeKantongKas(t.kantong, t.kategori, t.tipe);
 
-    // Track overall pockets
+    // Track overall pockets (all-time cash balance)
     if (kantongBalances[kType]) {
       if (t.tipe === "masuk") {
         kantongBalances[kType].masuk += nominal;
@@ -2478,28 +2520,35 @@ app.get("/api/transactions/summary", authenticateToken, (req: Request, res: Resp
       }
     }
 
-    // Category breakdown and general total (filtered by kantong if requested)
+    // Check date range condition for KPI and Category breakdowns
+    let inDateRange = true;
+    if (startBound && tDate < startBound) inDateRange = false;
+    if (endBound && tDate > endBound) inDateRange = false;
+
+    // Filter by kantong if requested
     const matchKantongFilter = !kantong || kantong === "all" || kType === kantong;
 
-    if (matchKantongFilter) {
+    if (inDateRange && matchKantongFilter) {
       if (t.tipe === "masuk") {
         totalPemasukan += nominal;
         if (isThisMonth) pemasukanBulanIni += nominal;
 
-        if (!incomeCatMap[t.kategori]) {
-          incomeCatMap[t.kategori] = { total: 0, count: 0 };
+        const catName = t.kategori || "Pemasukan Toko";
+        if (!incomeCatMap[catName]) {
+          incomeCatMap[catName] = { total: 0, count: 0 };
         }
-        incomeCatMap[t.kategori].total += nominal;
-        incomeCatMap[t.kategori].count += 1;
+        incomeCatMap[catName].total += nominal;
+        incomeCatMap[catName].count += 1;
       } else if (t.tipe === "keluar") {
         totalPengeluaran += nominal;
         if (isThisMonth) pengeluaranBulanIni += nominal;
 
-        if (!expenseCatMap[t.kategori]) {
-          expenseCatMap[t.kategori] = { total: 0, count: 0 };
+        const catName = t.kategori || "Pengeluaran Operasional";
+        if (!expenseCatMap[catName]) {
+          expenseCatMap[catName] = { total: 0, count: 0 };
         }
-        expenseCatMap[t.kategori].total += nominal;
-        expenseCatMap[t.kategori].count += 1;
+        expenseCatMap[catName].total += nominal;
+        expenseCatMap[catName].count += 1;
       }
     }
   });
@@ -3077,6 +3126,358 @@ app.delete("/api/transactions/:id", authenticateToken, (req: Request, res: Respo
   );
 
   res.json({ message: "Transaksi berhasil dihapus" });
+});
+
+/* ========================================================
+   TRANSFER SALDO ANTAR KANTONG & TABUNGAN / ANGSURAN
+======================================================== */
+
+// Transfer Saldo Antar Kantong Kas
+app.post("/api/transactions/transfer-kantong", authenticateToken, (req: Request, res: Response) => {
+  const currentUser = (req as any).user;
+  const { dari_kantong, ke_kantong, nominal, tanggal, keterangan, target_id } = req.body;
+
+  const validPockets = ["modal", "overhead", "gaji_saya", "gaji_karyawan", "margin"];
+  const source = normalizeKantongKas(dari_kantong, "Mutasi", "keluar");
+  const dest = normalizeKantongKas(ke_kantong, "Mutasi", "masuk");
+  const amount = Math.round(Number(nominal) || 0);
+
+  if (!source || !dest) {
+    res.status(400).json({ error: "Kantong asal dan kantong tujuan harus ditentukan secara valid." });
+    return;
+  }
+
+  if (source === dest) {
+    res.status(400).json({ error: "Kantong asal dan kantong tujuan tidak boleh sama." });
+    return;
+  }
+
+  if (amount <= 0) {
+    res.status(400).json({ error: "Nominal transfer harus lebih dari Rp 0." });
+    return;
+  }
+
+  if (!memoryDb.transactions) memoryDb.transactions = [];
+
+  const pocketLabels: Record<string, string> = {
+    modal: "Modal Bahan & Vendor",
+    overhead: "Overhead & Operasional",
+    gaji_saya: "Gaji Saya (Owner)",
+    gaji_karyawan: "Gaji Karyawan",
+    margin: "Margin / Profit Toko",
+  };
+
+  const txDate = tanggal ? new Date(tanggal).toISOString() : new Date().toISOString();
+  const baseKet = (keterangan || "").trim() || `Pindah saldo dari Kantong ${pocketLabels[source]} ke ${pocketLabels[dest]}`;
+  const refCode = `TRF-${Date.now().toString().slice(-6)}`;
+
+  const id1 = memoryDb.transactions.length ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1 : 1;
+  const id2 = id1 + 1;
+
+  // 1. Transaksi Keluar dari Kantong Asal
+  const txOut = {
+    id: id1,
+    tipe: "keluar" as const,
+    kategori: "Pindah Saldo Kas",
+    kantong: source,
+    nominal: amount,
+    tanggal: txDate,
+    metode_pembayaran: "Mutasi Internal",
+    keterangan: `${baseKet} [Transfer Keluar]`,
+    referensi: refCode,
+    created_by: currentUser.nama || "Owner",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  // 2. Transaksi Masuk ke Kantong Tujuan
+  const txIn = {
+    id: id2,
+    tipe: "masuk" as const,
+    kategori: "Pindah Saldo Kas",
+    kantong: dest,
+    nominal: amount,
+    tanggal: txDate,
+    metode_pembayaran: "Mutasi Internal",
+    keterangan: `${baseKet} [Transfer Masuk]`,
+    referensi: refCode,
+    created_by: currentUser.nama || "Owner",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  memoryDb.transactions.push(txOut, txIn);
+  persistTransaction(txOut).catch(() => {});
+  persistTransaction(txIn).catch(() => {});
+
+  let updatedTarget = null;
+  if (target_id) {
+    if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
+    const tIdx = memoryDb.savingsTargets.findIndex((st) => st.id === Number(target_id));
+    if (tIdx !== -1) {
+      memoryDb.savingsTargets[tIdx].terkumpul_nominal = Math.round(
+        Number(memoryDb.savingsTargets[tIdx].terkumpul_nominal || 0) + amount
+      );
+      if (memoryDb.savingsTargets[tIdx].terkumpul_nominal >= memoryDb.savingsTargets[tIdx].target_nominal) {
+        memoryDb.savingsTargets[tIdx].status = "selesai";
+      }
+      memoryDb.savingsTargets[tIdx].updated_at = new Date().toISOString();
+      updatedTarget = memoryDb.savingsTargets[tIdx];
+      persistSavingsTarget(updatedTarget).catch(() => {});
+    }
+  }
+
+  logActivity(
+    currentUser.nama,
+    "Transfer Antar Kantong",
+    `Memindahkan Rp ${amount.toLocaleString()} dari [${source.toUpperCase()}] ke [${dest.toUpperCase()}]`
+  );
+
+  res.status(201).json({
+    message: `Berhasil memindahkan saldo Rp ${amount.toLocaleString()} dari Kantong ${pocketLabels[source]} ke Kantong ${pocketLabels[dest]}`,
+    transaksiKeluar: txOut,
+    transaksiMasuk: txIn,
+    target: updatedTarget,
+  });
+});
+
+// Get Savings & Angsuran Targets
+app.get("/api/savings-targets", authenticateToken, (req: Request, res: Response) => {
+  const targets = memoryDb.savingsTargets || [];
+  res.json({ targets });
+});
+
+// Create Target
+app.post("/api/savings-targets", authenticateToken, (req: Request, res: Response) => {
+  const currentUser = (req as any).user;
+  const {
+    tipe,
+    nama,
+    target_nominal,
+    terkumpul_nominal,
+    sumber_kantong_default,
+    jatuh_tempo,
+    cicilan_per_bulan,
+    catatan,
+  } = req.body;
+
+  if (!nama || !target_nominal || Number(target_nominal) <= 0) {
+    res.status(400).json({ error: "Nama rencana dan target nominal (harus > 0) wajib diisi." });
+    return;
+  }
+
+  if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
+
+  const newId = memoryDb.savingsTargets.length
+    ? Math.max(...memoryDb.savingsTargets.map((st) => st.id)) + 1
+    : 1;
+
+  const validTipe = tipe === "angsuran" ? "angsuran" : "tabungan";
+  const validSource = normalizeKantongKas(sumber_kantong_default, "Target", "keluar");
+
+  const newTarget = {
+    id: newId,
+    tipe: validTipe,
+    nama: nama.trim(),
+    target_nominal: Math.round(Number(target_nominal)),
+    terkumpul_nominal: Math.round(Number(terkumpul_nominal) || 0),
+    sumber_kantong_default: validSource,
+    jatuh_tempo: jatuh_tempo ? String(jatuh_tempo).trim() : "",
+    cicilan_per_bulan: Math.round(Number(cicilan_per_bulan) || 0),
+    catatan: catatan ? String(catatan).trim() : "",
+    status: Number(terkumpul_nominal || 0) >= Number(target_nominal) ? "selesai" : "aktif",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  memoryDb.savingsTargets.push(newTarget);
+  persistSavingsTarget(newTarget).catch(() => {});
+
+  logActivity(
+    currentUser.nama,
+    "Buat Target Tabungan/Angsuran",
+    `[${newTarget.tipe.toUpperCase()}] ${newTarget.nama} (Target: Rp ${newTarget.target_nominal.toLocaleString()})`
+  );
+
+  res.status(201).json({
+    message: `Target ${validTipe === "angsuran" ? "angsuran" : "tabungan"} '${newTarget.nama}' berhasil ditambahkan`,
+    target: newTarget,
+  });
+});
+
+// Update Target
+app.put("/api/savings-targets/:id", authenticateToken, (req: Request, res: Response) => {
+  const currentUser = (req as any).user;
+  const id = Number(req.params.id);
+  if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
+  const index = memoryDb.savingsTargets.findIndex((st) => st.id === id);
+
+  if (index === -1) {
+    res.status(404).json({ error: "Target tabungan/angsuran tidak ditemukan." });
+    return;
+  }
+
+  const {
+    tipe,
+    nama,
+    target_nominal,
+    terkumpul_nominal,
+    sumber_kantong_default,
+    jatuh_tempo,
+    cicilan_per_bulan,
+    catatan,
+    status,
+  } = req.body;
+
+  const current = memoryDb.savingsTargets[index];
+  const nextTargetNominal = target_nominal !== undefined ? Math.round(Number(target_nominal)) : current.target_nominal;
+  const nextTerkumpul = terkumpul_nominal !== undefined ? Math.round(Number(terkumpul_nominal)) : current.terkumpul_nominal;
+
+  let nextStatus = status || current.status;
+  if (!status && nextTerkumpul >= nextTargetNominal) {
+    nextStatus = "selesai";
+  }
+
+  memoryDb.savingsTargets[index] = {
+    ...current,
+    tipe: tipe || current.tipe,
+    nama: nama !== undefined ? nama.trim() : current.nama,
+    target_nominal: nextTargetNominal,
+    terkumpul_nominal: nextTerkumpul,
+    sumber_kantong_default: sumber_kantong_default
+      ? normalizeKantongKas(sumber_kantong_default, "Target", "keluar")
+      : current.sumber_kantong_default,
+    jatuh_tempo: jatuh_tempo !== undefined ? String(jatuh_tempo).trim() : current.jatuh_tempo,
+    cicilan_per_bulan: cicilan_per_bulan !== undefined ? Math.round(Number(cicilan_per_bulan)) : current.cicilan_per_bulan,
+    catatan: catatan !== undefined ? String(catatan).trim() : current.catatan,
+    status: nextStatus,
+    updated_at: new Date().toISOString(),
+  };
+
+  persistSavingsTarget(memoryDb.savingsTargets[index]).catch(() => {});
+
+  logActivity(
+    currentUser.nama,
+    "Update Target Tabungan/Angsuran",
+    `Memperbarui rencana ${memoryDb.savingsTargets[index].nama}`
+  );
+
+  res.json({
+    message: "Target berhasil diperbarui",
+    target: memoryDb.savingsTargets[index],
+  });
+});
+
+// Delete Target
+app.delete("/api/savings-targets/:id", authenticateToken, (req: Request, res: Response) => {
+  const currentUser = (req as any).user;
+  const id = Number(req.params.id);
+  if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
+  const index = memoryDb.savingsTargets.findIndex((st) => st.id === id);
+
+  if (index === -1) {
+    res.status(404).json({ error: "Target tidak ditemukan." });
+    return;
+  }
+
+  const deleted = memoryDb.savingsTargets.splice(index, 1)[0];
+  persistDeleteSavingsTarget(id).catch(() => {});
+
+  logActivity(
+    currentUser.nama,
+    "Hapus Target Tabungan/Angsuran",
+    `Menghapus target [${deleted.tipe.toUpperCase()}] ${deleted.nama}`
+  );
+
+  res.json({ message: "Target berhasil dihapus" });
+});
+
+// 1-Click Setor Tabungan / Bayar Angsuran dari Kantong Kas
+app.post("/api/savings-targets/:id/deposit", authenticateToken, (req: Request, res: Response) => {
+  const currentUser = (req as any).user;
+  const id = Number(req.params.id);
+  if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
+  const index = memoryDb.savingsTargets.findIndex((st) => st.id === id);
+
+  if (index === -1) {
+    res.status(404).json({ error: "Target tabungan/angsuran tidak ditemukan." });
+    return;
+  }
+
+  const target = memoryDb.savingsTargets[index];
+  const { nominal, dari_kantong, tanggal, keterangan, metode_pembayaran } = req.body;
+  const amount = Math.round(Number(nominal) || 0);
+
+  if (amount <= 0) {
+    res.status(400).json({ error: "Nominal setoran/angsuran harus lebih dari Rp 0." });
+    return;
+  }
+
+  const pocketSource = normalizeKantongKas(dari_kantong || target.sumber_kantong_default, "Target", "keluar");
+  const isAngsuran = target.tipe === "angsuran";
+  const categoryName = isAngsuran ? "Pembayaran Angsuran & Cicilan" : "Tabungan & Investasi";
+
+  if (!memoryDb.transactions) memoryDb.transactions = [];
+
+  const newTxId = memoryDb.transactions.length
+    ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
+    : 1;
+
+  const defaultNote = isAngsuran
+    ? `Bayar Angsuran/Cicilan '${target.nama}'`
+    : `Setor Tabungan/Dana Cadangan '${target.nama}'`;
+
+  const txNote = (keterangan || "").trim() || defaultNote;
+  const txDate = tanggal ? new Date(tanggal).toISOString() : new Date().toISOString();
+
+  // Buat transaksi pengeluaran kas dari kantong yang dipilih
+  const newTx = {
+    id: newTxId,
+    tipe: "keluar" as const,
+    kategori: categoryName,
+    kantong: pocketSource,
+    nominal: amount,
+    tanggal: txDate,
+    metode_pembayaran: metode_pembayaran || "Transfer BCA",
+    keterangan: txNote,
+    referensi: `TGT-${target.id}-${Date.now().toString().slice(-4)}`,
+    items: [
+      {
+        nama_item: txNote,
+        qty: 1,
+        harga_satuan: amount,
+        subtotal: amount,
+      },
+    ],
+    created_by: currentUser.nama || "Owner",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  memoryDb.transactions.push(newTx);
+  persistTransaction(newTx).catch(() => {});
+
+  // Update akumulasi terkumpul pada target
+  const newTerkumpul = Math.round(Number(target.terkumpul_nominal || 0) + amount);
+  target.terkumpul_nominal = newTerkumpul;
+  if (newTerkumpul >= target.target_nominal) {
+    target.status = "selesai";
+  }
+  target.updated_at = new Date().toISOString();
+  memoryDb.savingsTargets[index] = target;
+  persistSavingsTarget(target).catch(() => {});
+
+  logActivity(
+    currentUser.nama,
+    isAngsuran ? "Bayar Angsuran" : "Setor Tabungan",
+    `Alokasi Rp ${amount.toLocaleString()} dari [${pocketSource.toUpperCase()}] untuk '${target.nama}'`
+  );
+
+  res.status(201).json({
+    message: `Berhasil mencatat ${isAngsuran ? "angsuran" : "setoran tabungan"} Rp ${amount.toLocaleString()} untuk '${target.nama}' dari Kantong ${pocketSource}`,
+    target,
+    transaction: newTx,
+  });
 });
 
 /* ========================================================

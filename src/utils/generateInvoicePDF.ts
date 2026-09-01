@@ -112,6 +112,73 @@ export function generateWhatsAppLink(order: Order, settings?: StoreSettings | nu
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }
 
+/**
+ * Helper untuk memuat logo toko dari URL / dataUrl / SVG ke format PNG Base64 yang siap di-embed ke jsPDF
+ */
+async function loadLogoForPdf(
+  logoUrl?: string | null
+): Promise<{ dataUrl: string; width: number; height: number } | null> {
+  if (typeof window === "undefined") return null;
+
+  const targetUrl = (logoUrl && logoUrl.trim()) ? logoUrl.trim() : "/favicon.svg";
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      try {
+        const nw = img.naturalWidth || img.width || 120;
+        const nh = img.naturalHeight || img.height || 120;
+        const canvas = document.createElement("canvas");
+        const targetW = Math.max(nw, 250);
+        const targetH = Math.round(targetW * (nh / nw));
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        const dataUrl = canvas.toDataURL("image/png");
+        resolve({
+          dataUrl,
+          width: targetW,
+          height: targetH,
+        });
+      } catch (e) {
+        console.warn("Gagal render logo ke canvas:", e);
+        if (targetUrl !== "/favicon.svg") {
+          loadLogoForPdf("/favicon.svg").then(resolve);
+        } else {
+          resolve(null);
+        }
+      }
+    };
+
+    img.onerror = () => {
+      if (targetUrl !== "/favicon.svg") {
+        loadLogoForPdf("/favicon.svg").then(resolve);
+      } else {
+        resolve(null);
+      }
+    };
+
+    setTimeout(() => {
+      if (targetUrl !== "/favicon.svg") {
+        loadLogoForPdf("/favicon.svg").then(resolve);
+      } else {
+        resolve(null);
+      }
+    }, 2500);
+
+    img.src = targetUrl;
+  });
+}
+
 // =========================================================================
 // 1. GENERATE FAKTUR / INVOICE PDF (Multi-Layout: A4, A5, Thermal)
 // =========================================================================
@@ -122,6 +189,20 @@ export async function generateInvoicePDF(
 ): Promise<InvoicePdfResult> {
   const { action = "open" } = options;
   const paperFormat = options.paperFormat || getUserPaperPreference();
+
+  // Pastikan data settings toko terisi
+  let finalSettings = settings;
+  if (!finalSettings) {
+    try {
+      const res = await api.getSettings();
+      if (res?.settings) finalSettings = res.settings;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Muat data logo toko
+  const logoData = await loadLogoForPdf(finalSettings?.logo_url);
 
   // Inisialisasi jsPDF berdasarkan format kertas
   let doc: jsPDF;
@@ -155,13 +236,13 @@ export async function generateInvoicePDF(
   let currentY = paperFormat.startsWith("thermal") ? 5 : 5.5;
 
   // Data Toko
-  const storeName = settings?.nama_toko || "JERES STUDIO";
-  const storeSlogan = settings?.slogan || "Digital Printing & Custom Merchandise";
-  const storeAddress = settings?.alamat || "Jl. Percetakan Raya No. 88";
-  const storePhone = settings?.no_wa || "0812-3456-7890";
-  const storeEmail = settings?.email || "jeresstudio@gmail.com";
-  const storeBank = settings?.rekening_bank || "BCA: 1234567890 a/n Jeres Studio";
-  const storeNotes = settings?.catatan_nota || "Barang yang sudah dicetak/diambil tidak dapat dikembalikan. Harap periksa sebelum meninggalkan toko.";
+  const storeName = finalSettings?.nama_toko || "JERES STUDIO";
+  const storeSlogan = finalSettings?.slogan || "Digital Printing & Custom Merchandise";
+  const storeAddress = finalSettings?.alamat || "Jl. Percetakan Raya No. 88";
+  const storePhone = finalSettings?.no_wa || "0812-3456-7890";
+  const storeEmail = finalSettings?.email || "jeresstudio@gmail.com";
+  const storeBank = finalSettings?.rekening_bank || "BCA: 1234567890 a/n Jeres Studio";
+  const storeNotes = finalSettings?.catatan_nota || "Barang yang sudah dicetak/diambil tidak dapat dikembalikan. Harap periksa sebelum meninggalkan toko.";
 
   const rightAlignX = pageWidth - marginX;
 
@@ -169,6 +250,28 @@ export async function generateInvoicePDF(
   if (paperFormat.startsWith("thermal")) {
     const is80 = paperFormat === "thermal80";
     const center = pageWidth / 2;
+
+    if (logoData) {
+      const maxLogoW = is80 ? 16 : 13;
+      const maxLogoH = is80 ? 12 : 10;
+      const aspect = (logoData.width || 1) / (logoData.height || 1);
+      let renderW = maxLogoW;
+      let renderH = maxLogoH;
+      if (aspect >= 1) {
+        renderW = maxLogoW;
+        renderH = maxLogoW / aspect;
+      } else {
+        renderH = maxLogoH;
+        renderW = maxLogoH * aspect;
+      }
+      const logoX = center - (renderW / 2);
+      try {
+        doc.addImage(logoData.dataUrl, "PNG", logoX, currentY, renderW, renderH, undefined, "FAST");
+        currentY += renderH + 2;
+      } catch {
+        // ignore
+      }
+    }
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(is80 ? 11 : 9.5);
@@ -269,41 +372,82 @@ export async function generateInvoicePDF(
   // ================= A4 & A5 STANDARD VECTOR LAYOUT =================
   const scale = paperFormat === "A4" ? 1.35 : 1.05;
 
-  // Header Brand Toko (Kiri)
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(storeName, marginX, currentY + 3.5);
+  let headerTextX = marginX;
+  const logoBoxSize = 15 * scale;
 
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(8.5 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text(storeSlogan, marginX, currentY + (7.8 * scale));
+  if (logoData) {
+    const aspect = (logoData.width || 1) / (logoData.height || 1);
+    let renderW = logoBoxSize;
+    let renderH = logoBoxSize;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(storeAddress, marginX, currentY + (12 * scale));
-  doc.text(`WA: ${storePhone} • Email: ${storeEmail}`, marginX, currentY + (16.2 * scale));
+    if (aspect >= 1) {
+      renderW = logoBoxSize;
+      renderH = logoBoxSize / aspect;
+    } else {
+      renderH = logoBoxSize;
+      renderW = logoBoxSize * aspect;
+    }
 
-  // Badge Header Kanan: "INVOICE PENJUALAN"
-  const badgeW = 54 * scale;
-  const badgeH = 18 * scale;
+    const logoX = marginX + (logoBoxSize - renderW) / 2;
+    const logoY = currentY + (logoBoxSize - renderH) / 2;
+
+    try {
+      doc.addImage(
+        logoData.dataUrl,
+        "PNG",
+        logoX,
+        logoY,
+        renderW,
+        renderH,
+        undefined,
+        "FAST"
+      );
+      headerTextX = marginX + logoBoxSize + (3 * scale);
+    } catch (err) {
+      console.warn("Gagal render logo di invoice:", err);
+      headerTextX = marginX;
+    }
+  }
+
+  // Badge Header Kanan: "INVOICE PENJUALAN" (Compact & Modern)
+  const badgeW = (paperFormat === "A4" ? 44 : 38) * scale;
+  const badgeH = 14 * scale;
+  const badgeX = rightAlignX - badgeW;
+  const headerGap = 3.5 * scale;
+  const maxHeaderWidth = Math.max(badgeX - headerTextX - headerGap, 40);
+
   doc.setFillColor(238, 242, 255);
   doc.setDrawColor(199, 210, 254);
-  doc.roundedRect(rightAlignX - badgeW, currentY, badgeW, badgeH, 1.5, 1.5, "FD");
+  doc.roundedRect(badgeX, currentY, badgeW, badgeH, 1.5, 1.5, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11 * scale);
+  doc.setFontSize(9 * scale);
   doc.setTextColor(67, 56, 202);
-  doc.text("INVOICE PENJUALAN", rightAlignX - (badgeW / 2), currentY + (6.8 * scale), { align: "center" });
+  doc.text("INVOICE PENJUALAN", badgeX + (badgeW / 2), currentY + (5.5 * scale), { align: "center" });
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5 * scale);
+  doc.setFontSize(8 * scale);
   doc.setTextColor(30, 41, 59);
-  doc.text(order.nomor_nota || "-", rightAlignX - (badgeW / 2), currentY + (13.5 * scale), { align: "center" });
+  doc.text(order.nomor_nota || "-", badgeX + (badgeW / 2), currentY + (11 * scale), { align: "center" });
 
-  currentY += 21 * scale;
+  // Header Brand Toko (Kiri) dengan batasan maxWidth agar tidak pernah menabrak kotak invoice
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13 * scale);
+  doc.setTextColor(30, 41, 59);
+  doc.text(storeName, headerTextX, currentY + 3.2, { maxWidth: maxHeaderWidth });
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7.8 * scale);
+  doc.setTextColor(100, 116, 139);
+  doc.text(storeSlogan, headerTextX, currentY + (7.2 * scale), { maxWidth: maxHeaderWidth });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.2 * scale);
+  doc.setTextColor(71, 85, 105);
+  doc.text(storeAddress, headerTextX, currentY + (11 * scale), { maxWidth: maxHeaderWidth });
+  doc.text(`WA: ${storePhone} • Email: ${storeEmail}`, headerTextX, currentY + (14.8 * scale), { maxWidth: maxHeaderWidth });
+
+  currentY += 17.5 * scale;
 
   // Garis Pembatas Header
   doc.setDrawColor(226, 232, 240);
@@ -702,6 +846,18 @@ export async function generateSuratJalanPDF(
   const { action = "open" } = options;
   const paperFormat = options.paperFormat || getUserPaperPreference();
 
+  let finalSettings = settings;
+  if (!finalSettings) {
+    try {
+      const res = await api.getSettings();
+      if (res?.settings) finalSettings = res.settings;
+    } catch {
+      // ignore
+    }
+  }
+
+  const logoData = await loadLogoForPdf(finalSettings?.logo_url);
+
   const isA4 = paperFormat === "A4";
   const pageWidth = isA4 ? 210 : 148;
   const pageHeight = isA4 ? 297 : 210;
@@ -715,40 +871,73 @@ export async function generateSuratJalanPDF(
     compress: true,
   });
 
-  const storeName = settings?.nama_toko || "JERES STUDIO";
-  const storeAddress = settings?.alamat || "Jl. Percetakan Raya No. 88";
-  const storePhone = settings?.no_wa || "0812-3456-7890";
+  const storeName = finalSettings?.nama_toko || "JERES STUDIO";
+  const storeAddress = finalSettings?.alamat || "Jl. Percetakan Raya No. 88";
+  const storePhone = finalSettings?.no_wa || "0812-3456-7890";
   const rightAlignX = pageWidth - marginX;
   let currentY = 5.5;
 
-  // Header Kiri
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(storeName, marginX, currentY + 3.5);
+  let headerTextX = marginX;
+  const logoBoxSize = 14 * scale;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(storeAddress, marginX, currentY + (7.8 * scale));
-  doc.text(`Telp/WA: ${storePhone}`, marginX, currentY + (12 * scale));
+  if (logoData) {
+    const aspect = (logoData.width || 1) / (logoData.height || 1);
+    let renderW = logoBoxSize;
+    let renderH = logoBoxSize;
 
-  // Badge Kanan: SURAT JALAN
-  const badgeW = 48 * scale;
+    if (aspect >= 1) {
+      renderW = logoBoxSize;
+      renderH = logoBoxSize / aspect;
+    } else {
+      renderH = logoBoxSize;
+      renderW = logoBoxSize * aspect;
+    }
+
+    const logoX = marginX + (logoBoxSize - renderW) / 2;
+    const logoY = currentY + (logoBoxSize - renderH) / 2;
+
+    try {
+      doc.addImage(logoData.dataUrl, "PNG", logoX, logoY, renderW, renderH, undefined, "FAST");
+      headerTextX = marginX + logoBoxSize + (3.5 * scale);
+    } catch (err) {
+      console.warn("Gagal render logo di Surat Jalan:", err);
+      headerTextX = marginX;
+    }
+  }
+
+  // Badge Kanan: SURAT JALAN (Compact)
+  const badgeW = (isA4 ? 40 : 35) * scale;
+  const badgeH = 13.5 * scale;
+  const badgeX = rightAlignX - badgeW;
+  const headerGap = 3.5 * scale;
+  const maxHeaderWidth = Math.max(badgeX - headerTextX - headerGap, 40);
+
   doc.setFillColor(241, 245, 249);
   doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(rightAlignX - badgeW, currentY, badgeW, 16 * scale, 1.5, 1.5, "FD");
+  doc.roundedRect(badgeX, currentY, badgeW, badgeH, 1.5, 1.5, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11 * scale);
+  doc.setFontSize(9.5 * scale);
   doc.setTextColor(15, 23, 42);
-  doc.text("SURAT JALAN", rightAlignX - (badgeW / 2), currentY + (6.5 * scale), { align: "center" });
+  doc.text("SURAT JALAN", badgeX + (badgeW / 2), currentY + (5.5 * scale), { align: "center" });
 
-  doc.setFontSize(8.5 * scale);
+  doc.setFontSize(7.8 * scale);
   doc.setTextColor(71, 85, 105);
-  doc.text(`No: SJ-${order.nomor_nota}`, rightAlignX - (badgeW / 2), currentY + (12 * scale), { align: "center" });
+  doc.text(`No: SJ-${order.nomor_nota}`, badgeX + (badgeW / 2), currentY + (10.5 * scale), { align: "center" });
 
-  currentY += 19 * scale;
+  // Header Kiri
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13 * scale);
+  doc.setTextColor(30, 41, 59);
+  doc.text(storeName, headerTextX, currentY + 3.2, { maxWidth: maxHeaderWidth });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5 * scale);
+  doc.setTextColor(71, 85, 105);
+  doc.text(storeAddress, headerTextX, currentY + (7.2 * scale), { maxWidth: maxHeaderWidth });
+  doc.text(`Telp/WA: ${storePhone}`, headerTextX, currentY + (11 * scale), { maxWidth: maxHeaderWidth });
+
+  currentY += 17 * scale;
   doc.setDrawColor(226, 232, 240);
   doc.line(marginX, currentY, rightAlignX, currentY);
 
@@ -874,6 +1063,18 @@ export async function generateTandaTerimaPDF(
   const { action = "open" } = options;
   const paperFormat = options.paperFormat || getUserPaperPreference();
 
+  let finalSettings = settings;
+  if (!finalSettings) {
+    try {
+      const res = await api.getSettings();
+      if (res?.settings) finalSettings = res.settings;
+    } catch {
+      // ignore
+    }
+  }
+
+  const logoData = await loadLogoForPdf(finalSettings?.logo_url);
+
   const isA4 = paperFormat === "A4";
   const pageWidth = isA4 ? 210 : 148;
   const pageHeight = isA4 ? 297 : 210;
@@ -887,38 +1088,71 @@ export async function generateTandaTerimaPDF(
     compress: true,
   });
 
-  const storeName = settings?.nama_toko || "JERES STUDIO";
-  const storeAddress = settings?.alamat || "Jl. Percetakan Raya No. 88";
+  const storeName = finalSettings?.nama_toko || "JERES STUDIO";
+  const storeAddress = finalSettings?.alamat || "Jl. Percetakan Raya No. 88";
   const rightAlignX = pageWidth - marginX;
   let currentY = 5.5;
 
-  // Header
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(storeName, marginX, currentY + 3.5);
+  let headerTextX = marginX;
+  const logoBoxSize = 14 * scale;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(storeAddress, marginX, currentY + (7.8 * scale));
+  if (logoData) {
+    const aspect = (logoData.width || 1) / (logoData.height || 1);
+    let renderW = logoBoxSize;
+    let renderH = logoBoxSize;
 
-  // Badge Tanda Terima
-  const badgeW = 54 * scale;
+    if (aspect >= 1) {
+      renderW = logoBoxSize;
+      renderH = logoBoxSize / aspect;
+    } else {
+      renderH = logoBoxSize;
+      renderW = logoBoxSize * aspect;
+    }
+
+    const logoX = marginX + (logoBoxSize - renderW) / 2;
+    const logoY = currentY + (logoBoxSize - renderH) / 2;
+
+    try {
+      doc.addImage(logoData.dataUrl, "PNG", logoX, logoY, renderW, renderH, undefined, "FAST");
+      headerTextX = marginX + logoBoxSize + (3.5 * scale);
+    } catch (err) {
+      console.warn("Gagal render logo di Tanda Terima:", err);
+      headerTextX = marginX;
+    }
+  }
+
+  // Badge Tanda Terima (Compact)
+  const badgeW = (isA4 ? 42 : 36) * scale;
+  const badgeH = 13.5 * scale;
+  const badgeX = rightAlignX - badgeW;
+  const headerGap = 3.5 * scale;
+  const maxHeaderWidth = Math.max(badgeX - headerTextX - headerGap, 40);
+
   doc.setFillColor(241, 245, 249);
   doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(rightAlignX - badgeW, currentY, badgeW, 16 * scale, 1.5, 1.5, "FD");
+  doc.roundedRect(badgeX, currentY, badgeW, badgeH, 1.5, 1.5, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5 * scale);
+  doc.setFontSize(9.5 * scale);
   doc.setTextColor(15, 23, 42);
-  doc.text("TANDA TERIMA", rightAlignX - (badgeW / 2), currentY + (6.5 * scale), { align: "center" });
+  doc.text("TANDA TERIMA", badgeX + (badgeW / 2), currentY + (5.5 * scale), { align: "center" });
 
-  doc.setFontSize(8 * scale);
+  doc.setFontSize(7.8 * scale);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Ref: ${order.nomor_nota}`, rightAlignX - (badgeW / 2), currentY + (12 * scale), { align: "center" });
+  doc.text(`Ref: ${order.nomor_nota}`, badgeX + (badgeW / 2), currentY + (10.5 * scale), { align: "center" });
 
-  currentY += 19 * scale;
+  // Header Kiri
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13 * scale);
+  doc.setTextColor(30, 41, 59);
+  doc.text(storeName, headerTextX, currentY + 3.2, { maxWidth: maxHeaderWidth });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5 * scale);
+  doc.setTextColor(71, 85, 105);
+  doc.text(storeAddress, headerTextX, currentY + (7.2 * scale), { maxWidth: maxHeaderWidth });
+
+  currentY += 17 * scale;
   doc.setDrawColor(226, 232, 240);
   doc.line(marginX, currentY, rightAlignX, currentY);
 

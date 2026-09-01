@@ -241,7 +241,25 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
       );
     `;
 
-    console.log("✓ Semua 12 tabel berhasil diverifikasi & dibuat di Neon PostgreSQL.");
+    // 13. savings_targets (Tabungan & Angsuran Kas)
+    await sql`
+      CREATE TABLE IF NOT EXISTS savings_targets (
+        id SERIAL PRIMARY KEY,
+        tipe VARCHAR(20) DEFAULT 'tabungan' NOT NULL,
+        nama VARCHAR(150) NOT NULL,
+        target_nominal NUMERIC NOT NULL,
+        terkumpul_nominal NUMERIC DEFAULT 0 NOT NULL,
+        sumber_kantong_default VARCHAR(50) DEFAULT 'margin' NOT NULL,
+        jatuh_tempo VARCHAR(50),
+        cicilan_per_bulan NUMERIC DEFAULT 0,
+        catatan TEXT,
+        status VARCHAR(20) DEFAULT 'aktif' NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+    `;
+
+    console.log("✓ Semua 13 tabel berhasil diverifikasi & dibuat di Neon PostgreSQL.");
 
     // Auto-seed initial data ONLY if tables are completely empty
     await autoSeedIfEmpty(sql);
@@ -255,7 +273,7 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
     return {
       success: true,
       message: "Tabel dan skema Neon PostgreSQL berhasil diinisialisasi & disinkronkan dengan data database Neon.",
-      tableCount: 12,
+      tableCount: 13,
     };
   } catch (err: any) {
     console.error("Gagal menginisialisasi tabel di Neon:", err);
@@ -504,6 +522,18 @@ export async function syncFromNeonToMemory(sql: any) {
       tanggal: p.tanggal ? new Date(p.tanggal).toISOString() : new Date().toISOString(),
       created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
     }));
+
+    const targets = await sql`SELECT * FROM savings_targets ORDER BY id ASC`;
+    if (targets.length > 0) {
+      memoryDb.savingsTargets = targets.map((st: any) => ({
+        ...st,
+        target_nominal: Number(st.target_nominal),
+        terkumpul_nominal: Number(st.terkumpul_nominal),
+        cicilan_per_bulan: Number(st.cicilan_per_bulan || 0),
+        created_at: st.created_at ? new Date(st.created_at).toISOString() : new Date().toISOString(),
+        updated_at: st.updated_at ? new Date(st.updated_at).toISOString() : new Date().toISOString(),
+      }));
+    }
 
     console.log("✓ Data dari database Neon PostgreSQL berhasil disinkronkan secara presisi ke memori server.");
   } catch (err) {
@@ -982,6 +1012,45 @@ export async function persistDeletePurchase(id: number) {
     await sql`DELETE FROM purchase_history WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting purchase from Neon:", e);
+  }
+}
+
+export async function persistSavingsTarget(st: any) {
+  const sql = getNeonSql();
+  if (!sql) return;
+  try {
+    await sql`
+      INSERT INTO savings_targets (
+        id, tipe, nama, target_nominal, terkumpul_nominal, sumber_kantong_default, jatuh_tempo, cicilan_per_bulan, catatan, status, created_at, updated_at
+      ) VALUES (
+        ${st.id}, ${st.tipe || 'tabungan'}, ${st.nama}, ${st.target_nominal || 0}, ${st.terkumpul_nominal || 0},
+        ${st.sumber_kantong_default || 'margin'}, ${st.jatuh_tempo || ''}, ${st.cicilan_per_bulan || 0},
+        ${st.catatan || ''}, ${st.status || 'aktif'}, ${new Date(st.created_at || Date.now())}, ${new Date(st.updated_at || Date.now())}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        tipe = EXCLUDED.tipe,
+        nama = EXCLUDED.nama,
+        target_nominal = EXCLUDED.target_nominal,
+        terkumpul_nominal = EXCLUDED.terkumpul_nominal,
+        sumber_kantong_default = EXCLUDED.sumber_kantong_default,
+        jatuh_tempo = EXCLUDED.jatuh_tempo,
+        cicilan_per_bulan = EXCLUDED.cicilan_per_bulan,
+        catatan = EXCLUDED.catatan,
+        status = EXCLUDED.status,
+        updated_at = NOW();
+    `;
+  } catch (e) {
+    console.error("Error persisting savings target to Neon:", e);
+  }
+}
+
+export async function persistDeleteSavingsTarget(id: number) {
+  const sql = getNeonSql();
+  if (!sql) return;
+  try {
+    await sql`DELETE FROM savings_targets WHERE id = ${id}`;
+  } catch (e) {
+    console.error("Error deleting savings target from Neon:", e);
   }
 }
 

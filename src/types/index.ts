@@ -273,6 +273,21 @@ export interface StoreSettings {
   updated_at?: string;
 }
 
+export interface SavingsAngsuranTarget {
+  id: number;
+  tipe: "tabungan" | "angsuran";
+  nama: string;
+  target_nominal: number;
+  terkumpul_nominal: number;
+  sumber_kantong_default: KantongKasType;
+  jatuh_tempo?: string;
+  cicilan_per_bulan?: number;
+  catatan?: string;
+  status: "aktif" | "selesai" | "ditunda";
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface DashboardStats {
   totalOmzetBulanIni: number;
   totalOrderBulanIni: number;

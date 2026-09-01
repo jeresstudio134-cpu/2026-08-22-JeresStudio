@@ -16,6 +16,7 @@ import {
   AlertCircle,
   ExternalLink,
   Link as LinkIcon,
+  Building2,
 } from "lucide-react";
 
 export const AdminVendors: React.FC = () => {
@@ -403,7 +404,55 @@ export const AdminVendors: React.FC = () => {
             <Receipt className="w-9 h-9 text-emerald-600 opacity-60" />
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          {/* Mobile & Tablet Card List */}
+          <div className="block lg:hidden space-y-3">
+            {purchases.length > 0 ? (
+              purchases.map((p) => (
+                <div
+                  key={p.id}
+                  className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {formatTanggal(p.tanggal)}
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white mt-0.5">
+                        {p.nama_barang}
+                      </h4>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatRupiah(p.total)}
+                      </span>
+                      <p className="text-[10px] text-slate-400">
+                        {p.qty} {p.satuan}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 font-medium">
+                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{p.vendor_nama || `Vendor #${p.vendor_id}`}</span>
+                    </div>
+                    {p.catatan && (
+                      <span className="text-[11px] text-slate-400 italic truncate max-w-[150px]">
+                        {p.catatan}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                Belum ada catatan kulakan tersimpan
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden lg:block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[10px] font-semibold uppercase text-slate-500">
@@ -456,28 +505,31 @@ export const AdminVendors: React.FC = () => {
 
       {/* Vendor Add/Edit Modal */}
       {vendorModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden animate-in fade-in">
+          <div className="w-full max-w-md max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            {/* Header Modal */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50 shrink-0">
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
                 {editingVendor ? "Edit Vendor" : "Tambah Vendor Baru"}
               </h3>
               <button
+                type="button"
                 onClick={() => setVendorModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {formError && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitVendor} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmitVendor} className="flex flex-col flex-1 overflow-hidden min-h-0">
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+                {formError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Nama Vendor / Supplier *
@@ -577,18 +629,21 @@ export const AdminVendors: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              </div>
+
+              {/* Action Buttons - Fixed at bottom */}
+              <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setVendorModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm cursor-pointer"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors cursor-pointer"
                 >
                   {saving ? "Menyimpan..." : "Simpan Vendor"}
                 </button>
@@ -600,139 +655,143 @@ export const AdminVendors: React.FC = () => {
 
       {/* Purchase Modal */}
       {purchaseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden animate-in fade-in">
+          <div className="w-full max-w-md max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50 shrink-0">
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
                 Catat Pengeluaran Kulakan Bahan
               </h3>
               <button
+                type="button"
                 onClick={() => setPurchaseModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {formError && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
+            <form onSubmit={handleSubmitPurchase} className="flex flex-col flex-1 overflow-hidden min-h-0">
+              <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+                {formError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
 
-            <form onSubmit={handleSubmitPurchase} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Pilih Vendor Supplier *
-                </label>
-                <select
-                  required
-                  value={purchaseFormData.vendor_id}
-                  onChange={(e) => setPurchaseFormData({ ...purchaseFormData, vendor_id: Number(e.target.value) })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                >
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.nama_vendor} ({v.kategori_supply})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Bahan / Barang yang Dibeli *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: PET Film DTF Cold Peel 60cm (100 Meter)"
-                  value={purchaseFormData.nama_barang}
-                  onChange={(e) => setPurchaseFormData({ ...purchaseFormData, nama_barang: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Jumlah (Qty) *
+                    Pilih Vendor Supplier *
                   </label>
-                  <input
-                    type="number"
-                    min="1"
+                  <select
                     required
-                    value={purchaseFormData.qty}
-                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, qty: Number(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-center font-bold"
-                  />
+                    value={purchaseFormData.vendor_id}
+                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, vendor_id: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                  >
+                    {vendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.nama_vendor} ({v.kategori_supply})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Satuan
+                    Nama Bahan / Barang yang Dibeli *
                   </label>
                   <input
                     type="text"
-                    value={purchaseFormData.satuan}
-                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, satuan: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-center"
+                    required
+                    placeholder="Contoh: PET Film DTF Cold Peel 60cm (100 Meter)"
+                    value={purchaseFormData.nama_barang}
+                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, nama_barang: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Jumlah (Qty) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={purchaseFormData.qty}
+                      onChange={(e) => setPurchaseFormData({ ...purchaseFormData, qty: Number(e.target.value) || 1 })}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-center font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Satuan
+                    </label>
+                    <input
+                      type="text"
+                      value={purchaseFormData.satuan}
+                      onChange={(e) => setPurchaseFormData({ ...purchaseFormData, satuan: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-center"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Total Biaya Pembelian (Rp) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={purchaseFormData.total}
+                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, total: Number(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Tanggal Beli
+                  </label>
+                  <input
+                    type="date"
+                    value={purchaseFormData.tanggal}
+                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, tanggal: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Catatan / No. Faktur Supplier
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Inv-99238 lunas via Transfer"
+                    value={purchaseFormData.catatan}
+                    onChange={(e) => setPurchaseFormData({ ...purchaseFormData, catatan: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Total Biaya Pembelian (Rp) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  required
-                  value={purchaseFormData.total}
-                  onChange={(e) => setPurchaseFormData({ ...purchaseFormData, total: Number(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Tanggal Beli
-                </label>
-                <input
-                  type="date"
-                  value={purchaseFormData.tanggal}
-                  onChange={(e) => setPurchaseFormData({ ...purchaseFormData, tanggal: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Catatan / No. Faktur Supplier
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Inv-99238 lunas via Transfer"
-                  value={purchaseFormData.catatan}
-                  onChange={(e) => setPurchaseFormData({ ...purchaseFormData, catatan: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              {/* Action Buttons - Fixed at bottom */}
+              <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setPurchaseModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm cursor-pointer"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors cursor-pointer"
                 >
                   {saving ? "Menyimpan..." : "Simpan Kulakan"}
                 </button>

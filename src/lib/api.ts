@@ -272,9 +272,17 @@ export const api = {
     return request<{ transactions: any[] }>(`/api/transactions?${query.toString()}`);
   },
 
-  getTransactionSummary: (kantong?: string) => {
-    const query = kantong && kantong !== "all" ? `?kantong=${encodeURIComponent(kantong)}` : "";
-    return request<{ summary: any }>(`/api/transactions/summary${query}`);
+  getTransactionSummary: (params?: string | { kantong?: string; startDate?: string; endDate?: string }) => {
+    const query = new URLSearchParams();
+    if (typeof params === "string") {
+      if (params && params !== "all") query.set("kantong", params);
+    } else if (params) {
+      if (params.kantong && params.kantong !== "all") query.set("kantong", params.kantong);
+      if (params.startDate) query.set("startDate", params.startDate);
+      if (params.endDate) query.set("endDate", params.endDate);
+    }
+    const qStr = query.toString() ? `?${query.toString()}` : "";
+    return request<{ summary: any }>(`/api/transactions/summary${qStr}`);
   },
 
   getTransactionCategories: () =>
@@ -349,6 +357,62 @@ export const api = {
     request<{ success: boolean; result: any }>("/api/transactions/scan-receipt", {
       method: "POST",
       body: JSON.stringify({ image }),
+    }),
+
+  // Transfer Antar Kantong Kas
+  transferKantong: (data: {
+    dari_kantong: string;
+    ke_kantong: string;
+    nominal: number;
+    tanggal?: string;
+    keterangan?: string;
+    target_id?: number;
+  }) =>
+    request<{
+      message: string;
+      transaksiKeluar: any;
+      transaksiMasuk: any;
+      target?: any;
+    }>("/api/transactions/transfer-kantong", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Tabungan & Angsuran Targets
+  getSavingsTargets: () =>
+    request<{ targets: any[] }>("/api/savings-targets"),
+
+  createSavingsTarget: (data: any) =>
+    request<{ message: string; target: any }>("/api/savings-targets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSavingsTarget: (id: number, data: any) =>
+    request<{ message: string; target: any }>(`/api/savings-targets/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSavingsTarget: (id: number) =>
+    request<{ message: string }>(`/api/savings-targets/${id}`, {
+      method: "DELETE",
+    }),
+
+  depositToTarget: (id: number, data: {
+    nominal: number;
+    dari_kantong?: string;
+    tanggal?: string;
+    keterangan?: string;
+    metode_pembayaran?: string;
+  }) =>
+    request<{
+      message: string;
+      target: any;
+      transaction: any;
+    }>(`/api/savings-targets/${id}/deposit`, {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 
   // Dashboard

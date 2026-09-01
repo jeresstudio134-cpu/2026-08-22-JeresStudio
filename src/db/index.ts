@@ -34,6 +34,7 @@ export interface MemoryStore {
   activityLogs: Array<any>;
   guides: Array<any>;
   storeSettings: any;
+  savingsTargets: Array<any>;
 }
 
 const defaultAdminPasswordHash = bcrypt.hashSync("admin123", 10);
@@ -739,5 +740,49 @@ export const memoryDb: MemoryStore = {
     margin_threshold_good: "20",
     margin_threshold_warning: "10",
     updated_at: new Date().toISOString(),
-  }
+  },
+  savingsTargets: [
+    {
+      id: 1,
+      tipe: "tabungan",
+      nama: "Tabungan Upgrade Mesin A3+ Digital",
+      target_nominal: 15000000,
+      terkumpul_nominal: 4500000,
+      sumber_kantong_default: "margin",
+      jatuh_tempo: "2026-12-31",
+      cicilan_per_bulan: 1500000,
+      catatan: "Disisihkan rutin dari laba bersih Margin untuk beli mesin baru",
+      status: "aktif",
+      created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      tipe: "angsuran",
+      nama: "Angsuran Cicilan Mesin DTF Sablon",
+      target_nominal: 12000000,
+      terkumpul_nominal: 8000000,
+      sumber_kantong_default: "overhead",
+      jatuh_tempo: "2026-10-15",
+      cicilan_per_bulan: 1000000,
+      catatan: "Jatuh tempo setiap tgl 15 bulan berjalan, diambil dari kas Overhead",
+      status: "aktif",
+      created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 3,
+      tipe: "tabungan",
+      nama: "Dana Darurat & Cadangan Service Toko",
+      target_nominal: 5000000,
+      terkumpul_nominal: 2000000,
+      sumber_kantong_default: "margin",
+      jatuh_tempo: "",
+      cicilan_per_bulan: 500000,
+      catatan: "Dana siaga antisipasi pergantian sparepart / head mesin rusak",
+      status: "aktif",
+      created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  ]
 };
