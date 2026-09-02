@@ -45,6 +45,12 @@ export interface InvoicePdfResult {
 }
 
 /**
+ * Favicon SVG Data URI ikon PDF Resmi (Merah Kledo / Acrobat style)
+ */
+export const PDF_FAVICON_DATA_URI =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23ea4335' d='M6 2h14l8 8v18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z'/%3E%3Cpath fill='%23fce8e6' d='M20 2l8 8h-8V2z'/%3E%3Crect x='3' y='14' width='26' height='11' rx='2' fill='%23c5221f'/%3E%3Ctext x='16' y='22.5' fill='%23ffffff' font-family='Arial, Helvetica, sans-serif' font-size='7.5' font-weight='900' text-anchor='middle' letter-spacing='0.5'%3EPDF%3C/text%3E%3C/svg%3E";
+
+/**
  * Buat tab baru secara sinkron saat klik tombol untuk mencegah pop-up blocker browser
  */
 export function createPrintTab(title: string = "Memuat Dokumen..."): Window | null {
@@ -57,6 +63,7 @@ export function createPrintTab(title: string = "Memuat Dokumen..."): Window | nu
 <head>
   <meta charset="utf-8">
   <title>${title}</title>
+  <link rel="icon" type="image/svg+xml" href="${PDF_FAVICON_DATA_URI}">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -121,7 +128,7 @@ export function getPublicInvoiceUrl(order: Order): string {
 }
 
 /**
- * Safe PDF Output Handler: Membuka PDF di browser PDF Viewer tanpa paksa download
+ * Safe PDF Output Handler: Membuka PDF di browser PDF Viewer dengan Favicon Ikon PDF Merah (Kledo Style)
  */
 export function safeHandlePdfOutput(
   doc: jsPDF,
@@ -139,34 +146,69 @@ export function safeHandlePdfOutput(
     return;
   }
 
-  // Action: "open" atau "print" -> Langsung buka di tab PDF viewer browser
+  // Format title bersih untuk tab browser
+  const cleanTitle = filename
+    ? filename.replace(/\.pdf$/i, "").replace(/[-_]/g, " ")
+    : "Invoice Dokumen";
+
+  // Template Viewer HTML dengan Favicon PDF Merah & Full Embed
+  const viewerHtml = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>${cleanTitle}</title>
+  <link rel="icon" type="image/svg+xml" href="${PDF_FAVICON_DATA_URI}">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #525659; }
+    iframe { width: 100vw; height: 100vh; border: none; display: block; }
+  </style>
+</head>
+<body>
+  <iframe src="${blobUrl}#toolbar=1&navpanes=0&scrollbar=1" type="application/pdf" title="${cleanTitle}"></iframe>
+</body>
+</html>`;
+
+  // Action: "open" atau "print" -> Buka di tab dengan Favicon PDF Merah
   if (targetWindow && !targetWindow.closed) {
     try {
-      if (filename) {
-        const cleanTitle = filename.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
-        targetWindow.document.title = cleanTitle;
-      }
-      targetWindow.location.href = blobUrl;
+      targetWindow.document.open();
+      targetWindow.document.write(viewerHtml);
+      targetWindow.document.close();
       return;
     } catch (err) {
-      console.warn("Gagal mengarahkan targetWindow:", err);
+      console.warn("Gagal render viewer ke targetWindow:", err);
+      try {
+        targetWindow.location.href = blobUrl;
+        return;
+      } catch {}
     }
   }
 
   try {
-    const newWindow = window.open(blobUrl, "_blank");
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-      // Fallback anchor tag click dengan target _blank
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (document.body.contains(a)) document.body.removeChild(a);
-      }, 300);
+    const newWindow = window.open("", "_blank");
+    if (newWindow && !newWindow.closed) {
+      newWindow.document.open();
+      newWindow.document.write(viewerHtml);
+      newWindow.document.close();
+      return;
     }
+  } catch (e) {
+    console.warn("Gagal membuka window baru untuk viewer:", e);
+  }
+
+  // Fallback anchor tag click jika pop-up terblokir
+  try {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (document.body.contains(a)) document.body.removeChild(a);
+    }, 300);
   } catch {
     doc.save(filename);
   }
