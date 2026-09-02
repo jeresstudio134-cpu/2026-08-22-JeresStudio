@@ -398,7 +398,7 @@ async function autoSeedIfEmpty(sql: any) {
   }
 }
 
-// 3. Sync from Neon directly into memoryDb Cache
+// 3. Sync from Neon directly into memoryDb Cache with bidirectional recovery
 export async function syncFromNeonToMemory(sql: any) {
   try {
     const users = await sql`SELECT * FROM admin_users ORDER BY id ASC`;
@@ -410,49 +410,55 @@ export async function syncFromNeonToMemory(sql: any) {
     }
 
     const prods = await sql`SELECT * FROM products ORDER BY id ASC`;
-    memoryDb.products = prods.map((p: any) => {
-      let imgs: string[] = [];
-      try {
-        imgs = p.images ? JSON.parse(p.images) : [];
-      } catch {
-        imgs = p.gambar_url ? [p.gambar_url] : [];
-      }
-      return {
-        ...p,
-        images: Array.isArray(imgs) ? imgs : [],
-        created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
-        updated_at: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
-      };
-    });
+    if (prods.length > 0) {
+      memoryDb.products = prods.map((p: any) => {
+        let imgs: string[] = [];
+        try {
+          imgs = p.images ? JSON.parse(p.images) : [];
+        } catch {
+          imgs = p.gambar_url ? [p.gambar_url] : [];
+        }
+        return {
+          ...p,
+          images: Array.isArray(imgs) ? imgs : [],
+          created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+          updated_at: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
+        };
+      });
+    }
 
     const ords = await sql`SELECT * FROM orders ORDER BY id DESC`;
-    memoryDb.orders = ords.map((o: any) => {
-      let progNotes: any[] = [];
-      try {
-        progNotes = o.progress_notes ? JSON.parse(o.progress_notes) : [];
-      } catch {
-        progNotes = [];
-      }
-      return {
-        ...o,
-        progress_notes: progNotes,
-        tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
-        tanggal_ambil: o.tanggal_ambil ? new Date(o.tanggal_ambil).toISOString() : null,
-        share_expires_at: o.share_expires_at ? new Date(o.share_expires_at).toISOString() : null,
-        created_at: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
-        updated_at: o.updated_at ? new Date(o.updated_at).toISOString() : new Date().toISOString(),
-      };
-    });
+    if (ords.length > 0) {
+      memoryDb.orders = ords.map((o: any) => {
+        let progNotes: any[] = [];
+        try {
+          progNotes = o.progress_notes ? JSON.parse(o.progress_notes) : [];
+        } catch {
+          progNotes = [];
+        }
+        return {
+          ...o,
+          progress_notes: progNotes,
+          tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
+          tanggal_ambil: o.tanggal_ambil ? new Date(o.tanggal_ambil).toISOString() : null,
+          share_expires_at: o.share_expires_at ? new Date(o.share_expires_at).toISOString() : null,
+          created_at: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
+          updated_at: o.updated_at ? new Date(o.updated_at).toISOString() : new Date().toISOString(),
+        };
+      });
+    }
 
     const items = await sql`SELECT * FROM order_items ORDER BY id ASC`;
-    memoryDb.orderItems = items.map((i: any) => ({
-      ...i,
-      qty: Number(i.qty),
-      harga_satuan: Number(i.harga_satuan),
-      subtotal: Number(i.subtotal),
-      panjang: i.panjang !== null ? Number(i.panjang) : null,
-      lebar: i.lebar !== null ? Number(i.lebar) : null,
-    }));
+    if (items.length > 0) {
+      memoryDb.orderItems = items.map((i: any) => ({
+        ...i,
+        qty: Number(i.qty),
+        harga_satuan: Number(i.harga_satuan),
+        subtotal: Number(i.subtotal),
+        panjang: i.panjang !== null ? Number(i.panjang) : null,
+        lebar: i.lebar !== null ? Number(i.lebar) : null,
+      }));
+    }
 
     const st = await sql`SELECT * FROM store_settings WHERE id = 1 LIMIT 1`;
     if (st.length > 0) {
@@ -463,38 +469,72 @@ export async function syncFromNeonToMemory(sql: any) {
     }
 
     const vens = await sql`SELECT * FROM vendors ORDER BY id ASC`;
-    memoryDb.vendors = vens.map((v: any) => ({
-      ...v,
-      created_at: v.created_at ? new Date(v.created_at).toISOString() : new Date().toISOString(),
-      updated_at: v.updated_at ? new Date(v.updated_at).toISOString() : new Date().toISOString(),
-    }));
+    if (vens.length > 0) {
+      memoryDb.vendors = vens.map((v: any) => ({
+        ...v,
+        created_at: v.created_at ? new Date(v.created_at).toISOString() : new Date().toISOString(),
+        updated_at: v.updated_at ? new Date(v.updated_at).toISOString() : new Date().toISOString(),
+      }));
+    }
 
     const pvs = await sql`SELECT * FROM product_vendors ORDER BY id ASC`;
-    memoryDb.product_vendors = pvs.map((pv: any) => ({
-      ...pv,
-      created_at: pv.created_at ? new Date(pv.created_at).toISOString() : new Date().toISOString(),
-      updated_at: pv.updated_at ? new Date(pv.updated_at).toISOString() : new Date().toISOString(),
-    }));
+    if (pvs.length > 0) {
+      memoryDb.product_vendors = pvs.map((pv: any) => ({
+        ...pv,
+        created_at: pv.created_at ? new Date(pv.created_at).toISOString() : new Date().toISOString(),
+        updated_at: pv.updated_at ? new Date(pv.updated_at).toISOString() : new Date().toISOString(),
+      }));
+    }
 
+    // Bidirectional sync for transactions
     const txs = await sql`SELECT * FROM transactions ORDER BY id DESC`;
-    memoryDb.transactions = txs.map((t: any) => {
-      let parsedItems = undefined;
-      if (t.items) {
-        try {
-          parsedItems = typeof t.items === "string" ? JSON.parse(t.items) : t.items;
-        } catch {
-          parsedItems = undefined;
+    if (txs.length > 0) {
+      const dbTxIds = new Set(txs.map((t: any) => t.id));
+      if (Array.isArray(memoryDb.transactions)) {
+        for (const mTx of memoryDb.transactions) {
+          if (!dbTxIds.has(mTx.id)) {
+            try {
+              await persistTransaction(mTx);
+            } catch (e) {
+              console.warn("Auto-sync memory transaction to Neon:", e);
+            }
+          }
         }
       }
-      return {
-        ...t,
-        nominal: Number(t.nominal),
-        items: Array.isArray(parsedItems) ? parsedItems : undefined,
-        tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
-        created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
-        updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
-      };
-    });
+      const refreshedTxs = await sql`SELECT * FROM transactions ORDER BY id DESC`;
+      memoryDb.transactions = refreshedTxs.map((t: any) => {
+        let parsedItems = undefined;
+        if (t.items) {
+          try {
+            parsedItems = typeof t.items === "string" ? JSON.parse(t.items) : t.items;
+          } catch {
+            parsedItems = undefined;
+          }
+        }
+        return {
+          ...t,
+          nominal: Number(t.nominal),
+          items: Array.isArray(parsedItems) ? parsedItems : undefined,
+          tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
+          created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+          updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+        };
+      });
+    } else if (memoryDb.transactions && memoryDb.transactions.length > 0) {
+      for (const mTx of memoryDb.transactions) {
+        await persistTransaction(mTx).catch(() => {});
+      }
+      const seededTxs = await sql`SELECT * FROM transactions ORDER BY id DESC`;
+      if (seededTxs.length > 0) {
+        memoryDb.transactions = seededTxs.map((t: any) => ({
+          ...t,
+          nominal: Number(t.nominal),
+          tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
+          created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+          updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+        }));
+      }
+    }
 
     const cats = await sql`SELECT * FROM categories ORDER BY id ASC`;
     if (cats.length > 0) {
@@ -514,14 +554,16 @@ export async function syncFromNeonToMemory(sql: any) {
     }
 
     const purchases = await sql`SELECT * FROM purchase_history ORDER BY id DESC`;
-    memoryDb.purchaseHistory = purchases.map((p: any) => ({
-      ...p,
-      qty: Number(p.qty),
-      harga_satuan: Number(p.harga_satuan),
-      total: Number(p.total),
-      tanggal: p.tanggal ? new Date(p.tanggal).toISOString() : new Date().toISOString(),
-      created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
-    }));
+    if (purchases.length > 0) {
+      memoryDb.purchaseHistory = purchases.map((p: any) => ({
+        ...p,
+        qty: Number(p.qty),
+        harga_satuan: Number(p.harga_satuan),
+        total: Number(p.total),
+        tanggal: p.tanggal ? new Date(p.tanggal).toISOString() : new Date().toISOString(),
+        created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+      }));
+    }
 
     const targets = await sql`SELECT * FROM savings_targets ORDER BY id ASC`;
     if (targets.length > 0) {
@@ -539,6 +581,12 @@ export async function syncFromNeonToMemory(sql: any) {
   } catch (err) {
     console.error("Gagal sinkronisasi data dari Neon:", err);
   }
+}
+
+export async function refreshMemoryFromNeon() {
+  const sql = getNeonSql();
+  if (!sql) return;
+  await syncFromNeonToMemory(sql);
 }
 
 // 4. Diagnostic Database Status
@@ -618,13 +666,16 @@ export async function getDatabaseStatus(): Promise<DbStatusInfo> {
 // 5. Persistent CRUD Mutation Helpers
 export async function persistProduct(product: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return product;
   try {
     const imagesStr = JSON.stringify(product.images || []);
+    const tanggal = product.updated_at ? new Date(product.updated_at) : new Date();
+    const createdAt = product.created_at ? new Date(product.created_at) : new Date();
+    
     if (product.id && typeof product.id === "number") {
       await sql`
-        INSERT INTO products (id, kategori, nama_item, deskripsi, satuan, harga, harga_minimum_qty, gambar_url, images, is_active, tampilkan_harga_publik, updated_at)
-        VALUES (${product.id}, ${product.kategori}, ${product.nama_item}, ${product.deskripsi || ''}, ${product.satuan || 'pcs'}, ${product.harga}, ${product.harga_minimum_qty || 1}, ${product.gambar_url || ''}, ${imagesStr}, ${product.is_active !== false}, ${product.tampilkan_harga_publik !== false}, ${new Date()})
+        INSERT INTO products (id, kategori, nama_item, deskripsi, satuan, harga, harga_minimum_qty, gambar_url, images, is_active, tampilkan_harga_publik, created_at, updated_at)
+        VALUES (${product.id}, ${product.kategori}, ${product.nama_item}, ${product.deskripsi || ''}, ${product.satuan || 'pcs'}, ${product.harga}, ${product.harga_minimum_qty || 1}, ${product.gambar_url || ''}, ${imagesStr}, ${product.is_active !== false}, ${product.tampilkan_harga_publik !== false}, ${createdAt}, ${tanggal})
         ON CONFLICT (id) DO UPDATE SET
           kategori = EXCLUDED.kategori,
           nama_item = EXCLUDED.nama_item,
@@ -638,9 +689,21 @@ export async function persistProduct(product: any) {
           tampilkan_harga_publik = EXCLUDED.tampilkan_harga_publik,
           updated_at = NOW();
       `;
+    } else {
+      const res = await sql`
+        INSERT INTO products (kategori, nama_item, deskripsi, satuan, harga, harga_minimum_qty, gambar_url, images, is_active, tampilkan_harga_publik, created_at, updated_at)
+        VALUES (${product.kategori}, ${product.nama_item}, ${product.deskripsi || ''}, ${product.satuan || 'pcs'}, ${product.harga}, ${product.harga_minimum_qty || 1}, ${product.gambar_url || ''}, ${imagesStr}, ${product.is_active !== false}, ${product.tampilkan_harga_publik !== false}, ${createdAt}, ${tanggal})
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        product.id = res[0].id;
+      }
     }
+    await sql`SELECT setval(pg_get_serial_sequence('products', 'id'), COALESCE((SELECT MAX(id) FROM products), 1))`.catch(() => {});
+    return product;
   } catch (e) {
     console.error("Error persisting product to Neon:", e);
+    throw e;
   }
 }
 
@@ -651,48 +714,70 @@ export async function persistDeleteProduct(id: number) {
     await sql`DELETE FROM products WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting product from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistOrder(order: any, items: any[]) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return order;
   try {
     const progNotesStr = JSON.stringify(order.progress_notes || []);
     const tanggalOrder = order.tanggal_order ? new Date(order.tanggal_order) : new Date();
     const tanggalAmbil = order.tanggal_ambil ? new Date(order.tanggal_ambil) : null;
     const shareExpires = order.share_expires_at ? new Date(order.share_expires_at) : null;
 
-    await sql`
-      INSERT INTO orders (
-        id, nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
-        metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
-        created_by, share_token, share_expires_at, progress_notes, updated_at
-      ) VALUES (
-        ${order.id}, ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
-        ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
-        ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${order.jumlah_dp || 0}, 
-        ${order.catatan || ''}, ${order.subtotal || 0}, ${order.diskon || 0}, ${order.total || 0}, 
-        ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
-        ${progNotesStr}, ${new Date()}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        nama_pelanggan = EXCLUDED.nama_pelanggan,
-        no_wa = EXCLUDED.no_wa,
-        tanggal_ambil = EXCLUDED.tanggal_ambil,
-        status = EXCLUDED.status,
-        metode_bayar = EXCLUDED.metode_bayar,
-        status_bayar = EXCLUDED.status_bayar,
-        jumlah_dp = EXCLUDED.jumlah_dp,
-        catatan = EXCLUDED.catatan,
-        subtotal = EXCLUDED.subtotal,
-        diskon = EXCLUDED.diskon,
-        total = EXCLUDED.total,
-        share_token = EXCLUDED.share_token,
-        share_expires_at = EXCLUDED.share_expires_at,
-        progress_notes = EXCLUDED.progress_notes,
-        updated_at = NOW();
-    `;
+    if (order.id && typeof order.id === "number") {
+      await sql`
+        INSERT INTO orders (
+          id, nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
+          metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
+          created_by, share_token, share_expires_at, progress_notes, updated_at
+        ) VALUES (
+          ${order.id}, ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
+          ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
+          ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${order.jumlah_dp || 0}, 
+          ${order.catatan || ''}, ${order.subtotal || 0}, ${order.diskon || 0}, ${order.total || 0}, 
+          ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
+          ${progNotesStr}, ${new Date()}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          nama_pelanggan = EXCLUDED.nama_pelanggan,
+          no_wa = EXCLUDED.no_wa,
+          tanggal_ambil = EXCLUDED.tanggal_ambil,
+          status = EXCLUDED.status,
+          metode_bayar = EXCLUDED.metode_bayar,
+          status_bayar = EXCLUDED.status_bayar,
+          jumlah_dp = EXCLUDED.jumlah_dp,
+          catatan = EXCLUDED.catatan,
+          subtotal = EXCLUDED.subtotal,
+          diskon = EXCLUDED.diskon,
+          total = EXCLUDED.total,
+          share_token = EXCLUDED.share_token,
+          share_expires_at = EXCLUDED.share_expires_at,
+          progress_notes = EXCLUDED.progress_notes,
+          updated_at = NOW();
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO orders (
+          nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
+          metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
+          created_by, share_token, share_expires_at, progress_notes, updated_at
+        ) VALUES (
+          ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
+          ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
+          ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${order.jumlah_dp || 0}, 
+          ${order.catatan || ''}, ${order.subtotal || 0}, ${order.diskon || 0}, ${order.total || 0}, 
+          ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
+          ${progNotesStr}, ${new Date()}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        order.id = res[0].id;
+      }
+    }
 
     // Persist items if provided
     if (items && items.length > 0) {
@@ -711,8 +796,13 @@ export async function persistOrder(order: any, items: any[]) {
         `;
       }
     }
+
+    await sql`SELECT setval(pg_get_serial_sequence('orders', 'id'), COALESCE((SELECT MAX(id) FROM orders), 1))`.catch(() => {});
+    await sql`SELECT setval(pg_get_serial_sequence('order_items', 'id'), COALESCE((SELECT MAX(id) FROM order_items), 1))`.catch(() => {});
+    return order;
   } catch (e) {
     console.error("Error persisting order to Neon:", e);
+    throw e;
   }
 }
 
@@ -723,37 +813,59 @@ export async function persistDeleteOrder(id: number) {
     await sql`DELETE FROM orders WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting order from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistTransaction(tx: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return tx;
   try {
     const tanggal = tx.tanggal ? new Date(tx.tanggal) : new Date();
     const itemsJson = tx.items ? JSON.stringify(tx.items) : null;
-    await sql`
-      INSERT INTO transactions (
-        id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, updated_at
-      ) VALUES (
-        ${tx.id}, ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${tx.nominal}, 
-        ${tanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
-        ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${new Date()}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        tipe = EXCLUDED.tipe,
-        kategori = EXCLUDED.kategori,
-        kantong = EXCLUDED.kantong,
-        nominal = EXCLUDED.nominal,
-        tanggal = EXCLUDED.tanggal,
-        metode_pembayaran = EXCLUDED.metode_pembayaran,
-        keterangan = EXCLUDED.keterangan,
-        referensi = EXCLUDED.referensi,
-        items = EXCLUDED.items,
-        updated_at = NOW();
-    `;
+    const nominal = Math.round(Number(tx.nominal) || 0);
+
+    if (tx.id && typeof tx.id === "number") {
+      await sql`
+        INSERT INTO transactions (
+          id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, updated_at
+        ) VALUES (
+          ${tx.id}, ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${nominal}, 
+          ${tanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
+          ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${new Date()}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          tipe = EXCLUDED.tipe,
+          kategori = EXCLUDED.kategori,
+          kantong = EXCLUDED.kantong,
+          nominal = EXCLUDED.nominal,
+          tanggal = EXCLUDED.tanggal,
+          metode_pembayaran = EXCLUDED.metode_pembayaran,
+          keterangan = EXCLUDED.keterangan,
+          referensi = EXCLUDED.referensi,
+          items = EXCLUDED.items,
+          updated_at = NOW();
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO transactions (
+          tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, updated_at
+        ) VALUES (
+          ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${nominal}, 
+          ${tanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
+          ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${new Date()}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        tx.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('transactions', 'id'), COALESCE((SELECT MAX(id) FROM transactions), 1))`.catch(() => {});
+    return tx;
   } catch (e) {
     console.error("Error persisting transaction to Neon:", e);
+    throw e;
   }
 }
 
@@ -764,6 +876,7 @@ export async function persistDeleteTransaction(id: number) {
     await sql`DELETE FROM transactions WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting transaction from Neon:", e);
+    throw e;
   }
 }
 
@@ -796,27 +909,45 @@ export async function persistStoreSettings(s: any) {
     console.log("✓ Pengaturan toko & URL Logo berhasil tersimpan permanen ke Neon PostgreSQL.");
   } catch (e) {
     console.error("Error persisting store settings to Neon:", e);
+    throw e;
   }
 }
 
 export async function persistAdminUser(u: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return u;
   try {
-    await sql`
-      INSERT INTO admin_users (
-        id, username, password_hash, nama, role
-      ) VALUES (
-        ${u.id}, ${u.username}, ${u.password_hash}, ${u.nama}, ${u.role || 'staff'}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        username = EXCLUDED.username,
-        password_hash = EXCLUDED.password_hash,
-        nama = EXCLUDED.nama,
-        role = EXCLUDED.role;
-    `;
+    if (u.id && typeof u.id === "number") {
+      await sql`
+        INSERT INTO admin_users (
+          id, username, password_hash, nama, role
+        ) VALUES (
+          ${u.id}, ${u.username}, ${u.password_hash}, ${u.nama}, ${u.role || 'staff'}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          username = EXCLUDED.username,
+          password_hash = EXCLUDED.password_hash,
+          nama = EXCLUDED.nama,
+          role = EXCLUDED.role;
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO admin_users (
+          username, password_hash, nama, role
+        ) VALUES (
+          ${u.username}, ${u.password_hash}, ${u.nama}, ${u.role || 'staff'}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        u.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('admin_users', 'id'), COALESCE((SELECT MAX(id) FROM admin_users), 1))`.catch(() => {});
+    return u;
   } catch (e) {
     console.error("Error persisting admin user to Neon:", e);
+    throw e;
   }
 }
 
@@ -827,35 +958,55 @@ export async function persistDeleteAdminUser(id: number) {
     await sql`DELETE FROM admin_users WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting admin user from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistVendor(v: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return v;
   try {
-    await sql`
-      INSERT INTO vendors (
-        id, nama_vendor, kategori_supply, kontak, kontak_nama, no_wa, link, alamat, catatan, is_active, updated_at
-      ) VALUES (
-        ${v.id}, ${v.nama_vendor}, ${v.kategori_supply || 'Lainnya'}, ${v.kontak || ''}, 
-        ${v.kontak_nama || ''}, ${v.no_wa || ''}, ${v.link || ''}, ${v.alamat || ''}, 
-        ${v.catatan || ''}, ${v.is_active !== false}, ${new Date()}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        nama_vendor = EXCLUDED.nama_vendor,
-        kategori_supply = EXCLUDED.kategori_supply,
-        kontak = EXCLUDED.kontak,
-        kontak_nama = EXCLUDED.kontak_nama,
-        no_wa = EXCLUDED.no_wa,
-        link = EXCLUDED.link,
-        alamat = EXCLUDED.alamat,
-        catatan = EXCLUDED.catatan,
-        is_active = EXCLUDED.is_active,
-        updated_at = NOW();
-    `;
+    if (v.id && typeof v.id === "number") {
+      await sql`
+        INSERT INTO vendors (
+          id, nama_vendor, kategori_supply, kontak, kontak_nama, no_wa, link, alamat, catatan, is_active, updated_at
+        ) VALUES (
+          ${v.id}, ${v.nama_vendor}, ${v.kategori_supply || 'Lainnya'}, ${v.kontak || ''}, 
+          ${v.kontak_nama || ''}, ${v.no_wa || ''}, ${v.link || ''}, ${v.alamat || ''}, 
+          ${v.catatan || ''}, ${v.is_active !== false}, ${new Date()}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          nama_vendor = EXCLUDED.nama_vendor,
+          kategori_supply = EXCLUDED.kategori_supply,
+          kontak = EXCLUDED.kontak,
+          kontak_nama = EXCLUDED.kontak_nama,
+          no_wa = EXCLUDED.no_wa,
+          link = EXCLUDED.link,
+          alamat = EXCLUDED.alamat,
+          catatan = EXCLUDED.catatan,
+          is_active = EXCLUDED.is_active,
+          updated_at = NOW();
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO vendors (
+          nama_vendor, kategori_supply, kontak, kontak_nama, no_wa, link, alamat, catatan, is_active, updated_at
+        ) VALUES (
+          ${v.nama_vendor}, ${v.kategori_supply || 'Lainnya'}, ${v.kontak || ''}, 
+          ${v.kontak_nama || ''}, ${v.no_wa || ''}, ${v.link || ''}, ${v.alamat || ''}, 
+          ${v.catatan || ''}, ${v.is_active !== false}, ${new Date()}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        v.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('vendors', 'id'), COALESCE((SELECT MAX(id) FROM vendors), 1))`.catch(() => {});
+    return v;
   } catch (e) {
     console.error("Error persisting vendor to Neon:", e);
+    throw e;
   }
 }
 
@@ -866,30 +1017,49 @@ export async function persistDeleteVendor(id: number) {
     await sql`DELETE FROM vendors WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting vendor from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistProductVendor(pv: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return pv;
   try {
-    await sql`
-      INSERT INTO product_vendors (
-        id, product_id, vendor_id, harga_modal, is_default, catatan, updated_at
-      ) VALUES (
-        ${pv.id}, ${pv.product_id}, ${pv.vendor_id}, ${pv.harga_modal}, 
-        ${pv.is_default || false}, ${pv.catatan || ''}, ${new Date()}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        product_id = EXCLUDED.product_id,
-        vendor_id = EXCLUDED.vendor_id,
-        harga_modal = EXCLUDED.harga_modal,
-        is_default = EXCLUDED.is_default,
-        catatan = EXCLUDED.catatan,
-        updated_at = NOW();
-    `;
+    if (pv.id && typeof pv.id === "number") {
+      await sql`
+        INSERT INTO product_vendors (
+          id, product_id, vendor_id, harga_modal, is_default, catatan, updated_at
+        ) VALUES (
+          ${pv.id}, ${pv.product_id}, ${pv.vendor_id}, ${pv.harga_modal}, 
+          ${pv.is_default || false}, ${pv.catatan || ''}, ${new Date()}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          product_id = EXCLUDED.product_id,
+          vendor_id = EXCLUDED.vendor_id,
+          harga_modal = EXCLUDED.harga_modal,
+          is_default = EXCLUDED.is_default,
+          catatan = EXCLUDED.catatan,
+          updated_at = NOW();
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO product_vendors (
+          product_id, vendor_id, harga_modal, is_default, catatan, updated_at
+        ) VALUES (
+          ${pv.product_id}, ${pv.vendor_id}, ${pv.harga_modal}, 
+          ${pv.is_default || false}, ${pv.catatan || ''}, ${new Date()}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        pv.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('product_vendors', 'id'), COALESCE((SELECT MAX(id) FROM product_vendors), 1))`.catch(() => {});
+    return pv;
   } catch (e) {
     console.error("Error persisting product vendor to Neon:", e);
+    throw e;
   }
 }
 
@@ -900,27 +1070,45 @@ export async function persistDeleteProductVendor(id: number) {
     await sql`DELETE FROM product_vendors WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting product vendor from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistGuide(g: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return g;
   try {
-    await sql`
-      INSERT INTO guides (
-        id, category, title, content, updated_at
-      ) VALUES (
-        ${g.id}, ${g.category || 'Template Chat'}, ${g.title}, ${g.content}, ${new Date()}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        category = EXCLUDED.category,
-        title = EXCLUDED.title,
-        content = EXCLUDED.content,
-        updated_at = NOW();
-    `;
+    if (g.id && typeof g.id === "number") {
+      await sql`
+        INSERT INTO guides (
+          id, category, title, content, updated_at
+        ) VALUES (
+          ${g.id}, ${g.category || 'Template Chat'}, ${g.title}, ${g.content}, ${new Date()}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          category = EXCLUDED.category,
+          title = EXCLUDED.title,
+          content = EXCLUDED.content,
+          updated_at = NOW();
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO guides (
+          category, title, content, updated_at
+        ) VALUES (
+          ${g.category || 'Template Chat'}, ${g.title}, ${g.content}, ${new Date()}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        g.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('guides', 'id'), COALESCE((SELECT MAX(id) FROM guides), 1))`.catch(() => {});
+    return g;
   } catch (e) {
     console.error("Error persisting guide to Neon:", e);
+    throw e;
   }
 }
 
@@ -931,6 +1119,7 @@ export async function persistDeleteGuide(id: number) {
     await sql`DELETE FROM guides WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting guide from Neon:", e);
+    throw e;
   }
 }
 
@@ -952,7 +1141,7 @@ export async function persistActivityLog(log: any) {
 
 export async function persistCategory(c: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return c;
   try {
     if (c.id && typeof c.id === "number") {
       await sql`
@@ -962,9 +1151,21 @@ export async function persistCategory(c: any) {
           name = EXCLUDED.name,
           type = EXCLUDED.type;
       `;
+    } else {
+      const res = await sql`
+        INSERT INTO categories (name, type, created_at)
+        VALUES (${c.name}, ${c.type || 'masuk'}, ${new Date(c.created_at || Date.now())})
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        c.id = res[0].id;
+      }
     }
+    await sql`SELECT setval(pg_get_serial_sequence('categories', 'id'), COALESCE((SELECT MAX(id) FROM categories), 1))`.catch(() => {});
+    return c;
   } catch (e) {
     console.error("Error persisting category to Neon:", e);
+    throw e;
   }
 }
 
@@ -975,33 +1176,52 @@ export async function persistDeleteCategory(id: number) {
     await sql`DELETE FROM categories WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting category from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistPurchase(p: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return p;
   try {
     const tanggal = p.tanggal ? new Date(p.tanggal) : new Date();
-    await sql`
-      INSERT INTO purchase_history (
-        id, vendor_id, tanggal, nama_barang, qty, satuan, harga_satuan, total, catatan, created_at
-      ) VALUES (
-        ${p.id}, ${p.vendor_id}, ${tanggal}, ${p.nama_barang}, ${p.qty || 1}, 
-        ${p.satuan || 'pcs'}, ${p.harga_satuan || 0}, ${p.total || 0}, ${p.catatan || ''}, ${new Date(p.created_at || Date.now())}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        vendor_id = EXCLUDED.vendor_id,
-        tanggal = EXCLUDED.tanggal,
-        nama_barang = EXCLUDED.nama_barang,
-        qty = EXCLUDED.qty,
-        satuan = EXCLUDED.satuan,
-        harga_satuan = EXCLUDED.harga_satuan,
-        total = EXCLUDED.total,
-        catatan = EXCLUDED.catatan;
-    `;
+    if (p.id && typeof p.id === "number") {
+      await sql`
+        INSERT INTO purchase_history (
+          id, vendor_id, tanggal, nama_barang, qty, satuan, harga_satuan, total, catatan, created_at
+        ) VALUES (
+          ${p.id}, ${p.vendor_id}, ${tanggal}, ${p.nama_barang}, ${p.qty || 1}, 
+          ${p.satuan || 'pcs'}, ${p.harga_satuan || 0}, ${p.total || 0}, ${p.catatan || ''}, ${new Date(p.created_at || Date.now())}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          vendor_id = EXCLUDED.vendor_id,
+          tanggal = EXCLUDED.tanggal,
+          nama_barang = EXCLUDED.nama_barang,
+          qty = EXCLUDED.qty,
+          satuan = EXCLUDED.satuan,
+          harga_satuan = EXCLUDED.harga_satuan,
+          total = EXCLUDED.total,
+          catatan = EXCLUDED.catatan;
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO purchase_history (
+          vendor_id, tanggal, nama_barang, qty, satuan, harga_satuan, total, catatan, created_at
+        ) VALUES (
+          ${p.vendor_id}, ${tanggal}, ${p.nama_barang}, ${p.qty || 1}, 
+          ${p.satuan || 'pcs'}, ${p.harga_satuan || 0}, ${p.total || 0}, ${p.catatan || ''}, ${new Date(p.created_at || Date.now())}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        p.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('purchase_history', 'id'), COALESCE((SELECT MAX(id) FROM purchase_history), 1))`.catch(() => {});
+    return p;
   } catch (e) {
     console.error("Error persisting purchase to Neon:", e);
+    throw e;
   }
 }
 
@@ -1012,35 +1232,55 @@ export async function persistDeletePurchase(id: number) {
     await sql`DELETE FROM purchase_history WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting purchase from Neon:", e);
+    throw e;
   }
 }
 
 export async function persistSavingsTarget(st: any) {
   const sql = getNeonSql();
-  if (!sql) return;
+  if (!sql) return st;
   try {
-    await sql`
-      INSERT INTO savings_targets (
-        id, tipe, nama, target_nominal, terkumpul_nominal, sumber_kantong_default, jatuh_tempo, cicilan_per_bulan, catatan, status, created_at, updated_at
-      ) VALUES (
-        ${st.id}, ${st.tipe || 'tabungan'}, ${st.nama}, ${st.target_nominal || 0}, ${st.terkumpul_nominal || 0},
-        ${st.sumber_kantong_default || 'margin'}, ${st.jatuh_tempo || ''}, ${st.cicilan_per_bulan || 0},
-        ${st.catatan || ''}, ${st.status || 'aktif'}, ${new Date(st.created_at || Date.now())}, ${new Date(st.updated_at || Date.now())}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        tipe = EXCLUDED.tipe,
-        nama = EXCLUDED.nama,
-        target_nominal = EXCLUDED.target_nominal,
-        terkumpul_nominal = EXCLUDED.terkumpul_nominal,
-        sumber_kantong_default = EXCLUDED.sumber_kantong_default,
-        jatuh_tempo = EXCLUDED.jatuh_tempo,
-        cicilan_per_bulan = EXCLUDED.cicilan_per_bulan,
-        catatan = EXCLUDED.catatan,
-        status = EXCLUDED.status,
-        updated_at = NOW();
-    `;
+    if (st.id && typeof st.id === "number") {
+      await sql`
+        INSERT INTO savings_targets (
+          id, tipe, nama, target_nominal, terkumpul_nominal, sumber_kantong_default, jatuh_tempo, cicilan_per_bulan, catatan, status, created_at, updated_at
+        ) VALUES (
+          ${st.id}, ${st.tipe || 'tabungan'}, ${st.nama}, ${st.target_nominal || 0}, ${st.terkumpul_nominal || 0},
+          ${st.sumber_kantong_default || 'margin'}, ${st.jatuh_tempo || ''}, ${st.cicilan_per_bulan || 0},
+          ${st.catatan || ''}, ${st.status || 'aktif'}, ${new Date(st.created_at || Date.now())}, ${new Date(st.updated_at || Date.now())}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          tipe = EXCLUDED.tipe,
+          nama = EXCLUDED.nama,
+          target_nominal = EXCLUDED.target_nominal,
+          terkumpul_nominal = EXCLUDED.terkumpul_nominal,
+          sumber_kantong_default = EXCLUDED.sumber_kantong_default,
+          jatuh_tempo = EXCLUDED.jatuh_tempo,
+          cicilan_per_bulan = EXCLUDED.cicilan_per_bulan,
+          catatan = EXCLUDED.catatan,
+          status = EXCLUDED.status,
+          updated_at = NOW();
+      `;
+    } else {
+      const res = await sql`
+        INSERT INTO savings_targets (
+          tipe, nama, target_nominal, terkumpul_nominal, sumber_kantong_default, jatuh_tempo, cicilan_per_bulan, catatan, status, created_at, updated_at
+        ) VALUES (
+          ${st.tipe || 'tabungan'}, ${st.nama}, ${st.target_nominal || 0}, ${st.terkumpul_nominal || 0},
+          ${st.sumber_kantong_default || 'margin'}, ${st.jatuh_tempo || ''}, ${st.cicilan_per_bulan || 0},
+          ${st.catatan || ''}, ${st.status || 'aktif'}, ${new Date(st.created_at || Date.now())}, ${new Date(st.updated_at || Date.now())}
+        )
+        RETURNING *;
+      `;
+      if (res && res[0]) {
+        st.id = res[0].id;
+      }
+    }
+    await sql`SELECT setval(pg_get_serial_sequence('savings_targets', 'id'), COALESCE((SELECT MAX(id) FROM savings_targets), 1))`.catch(() => {});
+    return st;
   } catch (e) {
     console.error("Error persisting savings target to Neon:", e);
+    throw e;
   }
 }
 
@@ -1051,6 +1291,7 @@ export async function persistDeleteSavingsTarget(id: number) {
     await sql`DELETE FROM savings_targets WHERE id = ${id}`;
   } catch (e) {
     console.error("Error deleting savings target from Neon:", e);
+    throw e;
   }
 }
 

@@ -1,10 +1,12 @@
 const TOKEN_KEY = "jeres_admin_token";
 
 export function getStoredToken(): string | null {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setStoredToken(token: string | null): void {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   if (token) {
     localStorage.setItem(TOKEN_KEY, token);
   } else {

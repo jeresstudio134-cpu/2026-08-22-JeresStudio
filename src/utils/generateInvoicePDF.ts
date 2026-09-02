@@ -128,11 +128,40 @@ export function getPublicInvoiceUrl(order: Order): string {
 }
 
 /**
+ * Dapatkan URL endpoint server langsung untuk dokumen PDF (Kledo Style)
+ * URL ini mengembalikan header 'Content-Type: application/pdf' yang membuat Chrome/Edge otomatis menampilkan ikon PDF merah.
+ */
+export function getDocumentPdfUrl(
+  docType: "faktur" | "surat_jalan" | "tanda_terima" | string = "faktur",
+  order: Order,
+  format?: PaperFormat,
+  download?: boolean
+): string {
+  const sanitizedNo = encodeURIComponent((order.nomor_nota || order.id || "INV").toString().trim());
+  let basePath = "/api/invoice";
+  if (docType === "surat_jalan") {
+    basePath = "/api/surat-jalan";
+  } else if (docType === "tanda_terima") {
+    basePath = "/api/tanda-terima";
+  }
+
+  const params = new URLSearchParams();
+  if (format && format !== "A4") {
+    params.set("format", format);
+  }
+  if (download) {
+    params.set("download", "true");
+  }
+  const qs = params.toString();
+  return `${basePath}/${sanitizedNo}.pdf${qs ? `?${qs}` : ""}`;
+}
+
+/**
  * Safe PDF Output Handler: Membuka PDF di browser PDF Viewer dengan Favicon Ikon PDF Merah (Kledo Style)
  */
 export function safeHandlePdfOutput(
   doc: jsPDF,
-  pdfBlob: Blob,
+  pdfBlob: Blob | null,
   blobUrl: string,
   filename: string,
   action: "download" | "open" | "print" | "blob" = "open",
@@ -550,12 +579,18 @@ export async function generateInvoicePDF(
 
     const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
     const filename = options.filename || `Invoice-${sanitizedOrderNo}.pdf`;
-    const pdfBlob = doc.output("blob");
-    const blobUrl = URL.createObjectURL(pdfBlob);
+    let pdfBlob: Blob | null = null;
+    let blobUrl = "";
+    try {
+      if (typeof window !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+        pdfBlob = doc.output("blob");
+        blobUrl = URL.createObjectURL(pdfBlob);
+      }
+    } catch {}
 
     safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
-    return { doc, blob: pdfBlob, blobUrl, filename };
+    return { doc, blob: pdfBlob as any, blobUrl, filename };
   }
 
   // ================= KLEDO ACCOUNTING VECTOR LAYOUT (A4 & A5) =================
@@ -919,12 +954,18 @@ export async function generateInvoicePDF(
 
   const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
   const filename = options.filename || `Invoice-${sanitizedOrderNo}.pdf`;
-  const pdfBlob = doc.output("blob");
-  const blobUrl = URL.createObjectURL(pdfBlob);
+  let pdfBlob: Blob | null = null;
+  let blobUrl = "";
+  try {
+    if (typeof window !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+      pdfBlob = doc.output("blob");
+      blobUrl = URL.createObjectURL(pdfBlob);
+    }
+  } catch {}
 
   safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
-  return { doc, blob: pdfBlob, blobUrl, filename };
+  return { doc, blob: pdfBlob as any, blobUrl, filename };
 }
 
 // =========================================================================
@@ -1166,12 +1207,18 @@ export async function generateSuratJalanPDF(
   });
 
   const filename = options.filename || `SuratJalan-${order.nomor_nota}.pdf`;
-  const pdfBlob = doc.output("blob");
-  const blobUrl = URL.createObjectURL(pdfBlob);
+  let pdfBlob: Blob | null = null;
+  let blobUrl = "";
+  try {
+    if (typeof window !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+      pdfBlob = doc.output("blob");
+      blobUrl = URL.createObjectURL(pdfBlob);
+    }
+  } catch {}
 
   safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
-  return { doc, blob: pdfBlob, blobUrl, filename };
+  return { doc, blob: pdfBlob as any, blobUrl, filename };
 }
 
 // =========================================================================
@@ -1392,12 +1439,18 @@ export async function generateTandaTerimaPDF(
   doc.text(`( ${order.nama_pelanggan} )`, rightX, sigY + (23 * scale), { align: "center" });
 
   const filename = options.filename || `TandaTerima-${order.nomor_nota}.pdf`;
-  const pdfBlob = doc.output("blob");
-  const blobUrl = URL.createObjectURL(pdfBlob);
+  let pdfBlob: Blob | null = null;
+  let blobUrl = "";
+  try {
+    if (typeof window !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+      pdfBlob = doc.output("blob");
+      blobUrl = URL.createObjectURL(pdfBlob);
+    }
+  } catch {}
 
   safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
-  return { doc, blob: pdfBlob, blobUrl, filename };
+  return { doc, blob: pdfBlob as any, blobUrl, filename };
 }
 
 // =========================================================================

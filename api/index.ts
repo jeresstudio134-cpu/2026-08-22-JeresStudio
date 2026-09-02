@@ -6,7 +6,12 @@ import { randomBytes } from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import { memoryDb, isNeonConnected, db } from "../src/db/index.js";
 import * as schema from "../src/db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, ilike, or } from "drizzle-orm";
+import {
+  generateInvoicePDF,
+  generateSuratJalanPDF,
+  generateTandaTerimaPDF,
+} from "../src/utils/generateInvoicePDF.js";
 import {
   getDatabaseStatus,
   initNeonTables,
@@ -195,7 +200,7 @@ function getGeminiClient() {
 }
 
 // Helper for activity log
-function logActivity(userName: string, action: string, details: string) {
+async function logActivity(userName: string, action: string, details: string) {
   try {
     const newLog = {
       id: memoryDb.activityLogs.length + 1,
@@ -205,7 +210,7 @@ function logActivity(userName: string, action: string, details: string) {
       created_at: new Date().toISOString(),
     };
     memoryDb.activityLogs.unshift(newLog);
-    persistActivityLog(newLog).catch(() => {});
+    await persistActivityLog(newLog).catch(() => {});
   } catch (e) {
     console.error("Log activity error:", e);
   }
@@ -346,7 +351,7 @@ app.get("/api/auth/staff", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Add New Staff
-app.post("/api/auth/staff", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/auth/staff", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   if (currentUser.role !== "owner") {
     res.status(403).json({ error: "Hanya Owner yang dapat menambah pengguna baru." });
@@ -375,7 +380,12 @@ app.post("/api/auth/staff", authenticateToken, (req: Request, res: Response) => 
   };
 
   memoryDb.adminUsers.push(newUser);
-  persistAdminUser(newUser).catch(() => {});
+  try {
+    const saved = await persistAdminUser(newUser);
+    if (saved && saved.id) newUser.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan user ke Neon:", err);
+  }
   logActivity(currentUser.nama, "Tambah Staff", `Menambahkan user baru: ${nama} (${newUser.role})`);
 
   res.status(201).json({
@@ -390,7 +400,7 @@ app.post("/api/auth/staff", authenticateToken, (req: Request, res: Response) => 
 });
 
 // Update Staff User (Username, Name, Role, and optional Password)
-app.put("/api/auth/staff/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/auth/staff/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const staffId = Number(req.params.id);
 
@@ -444,7 +454,11 @@ app.put("/api/auth/staff/:id", authenticateToken, (req: Request, res: Response) 
     targetUser.password_hash = bcrypt.hashSync(password.trim(), 10);
   }
 
-  persistAdminUser(targetUser).catch(() => {});
+  try {
+    await persistAdminUser(targetUser);
+  } catch (err) {
+    console.error("Gagal update user ke Neon:", err);
+  }
   logActivity(currentUser.nama, "Edit User", `Memperbarui data user: ${targetUser.nama} (${targetUser.username})`);
 
   res.json({
@@ -459,7 +473,7 @@ app.put("/api/auth/staff/:id", authenticateToken, (req: Request, res: Response) 
 });
 
 // Delete Staff User
-app.delete("/api/auth/staff/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/auth/staff/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const staffId = Number(req.params.id);
 
@@ -481,14 +495,18 @@ app.delete("/api/auth/staff/:id", authenticateToken, (req: Request, res: Respons
 
   const removedUser = memoryDb.adminUsers[targetIdx];
   memoryDb.adminUsers.splice(targetIdx, 1);
-  persistDeleteAdminUser(staffId).catch(() => {});
+  try {
+    await persistDeleteAdminUser(staffId);
+  } catch (err) {
+    console.error("Gagal hapus user di Neon:", err);
+  }
   logActivity(currentUser.nama, "Hapus Staff", `Menghapus akun: ${removedUser.nama} (${removedUser.username})`);
 
   res.json({ message: "Akun staff berhasil dihapus." });
 });
 
 // Change Password
-app.post("/api/auth/change-password", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/auth/change-password", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { currentPassword, newPassword, targetUserId } = req.body;
 
@@ -513,7 +531,11 @@ app.post("/api/auth/change-password", authenticateToken, (req: Request, res: Res
   }
 
   user.password_hash = bcrypt.hashSync(newPassword, 10);
-  persistAdminUser(user).catch(() => {});
+  try {
+    await persistAdminUser(user);
+  } catch (err) {
+    console.error("Gagal ganti password user di Neon:", err);
+  }
   logActivity(currentUser.nama, "Ganti Password", `Mengubah password user: ${user.nama}`);
 
   res.json({ message: "Password berhasil diperbarui." });
@@ -591,7 +613,7 @@ app.get("/api/products", optionalAuth, (req: Request, res: Response) => {
 });
 
 // Add Product
-app.post("/api/products", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/products", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { kategori, nama_item, deskripsi, satuan, harga, harga_minimum_qty, gambar_url, images, is_active, tampilkan_harga_publik } = req.body;
 
@@ -624,14 +646,19 @@ app.post("/api/products", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.products.push(newProduct);
-  persistProduct(newProduct).catch(() => {});
+  try {
+    const saved = await persistProduct(newProduct);
+    if (saved && saved.id) newProduct.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan produk ke Neon:", err);
+  }
   logActivity(currentUser.nama, "Tambah Produk", `Menambahkan ${newProduct.nama_item} (Rp ${newProduct.harga})`);
 
   res.status(201).json({ message: "Produk berhasil ditambahkan", product: newProduct });
 });
 
 // Update Product
-app.put("/api/products/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/products/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.products.findIndex((p) => p.id === id);
@@ -667,14 +694,18 @@ app.put("/api/products/:id", authenticateToken, (req: Request, res: Response) =>
     updated_at: new Date().toISOString(),
   };
 
-  persistProduct(memoryDb.products[index]).catch(() => {});
+  try {
+    await persistProduct(memoryDb.products[index]);
+  } catch (err) {
+    console.error("Gagal update produk di Neon:", err);
+  }
   logActivity(currentUser.nama, "Edit Produk", `Memperbarui produk ${memoryDb.products[index].nama_item}`);
 
   res.json({ message: "Produk berhasil diperbarui", product: memoryDb.products[index] });
 });
 
 // Delete Product
-app.delete("/api/products/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/products/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.products.findIndex((p) => p.id === id);
@@ -685,14 +716,18 @@ app.delete("/api/products/:id", authenticateToken, (req: Request, res: Response)
   }
 
   const deleted = memoryDb.products.splice(index, 1)[0];
-  persistDeleteProduct(id).catch(() => {});
+  try {
+    await persistDeleteProduct(id);
+  } catch (err) {
+    console.error("Gagal hapus produk di Neon:", err);
+  }
   logActivity(currentUser.nama, "Hapus Produk", `Menghapus produk ${deleted.nama_item}`);
 
   res.json({ message: "Produk berhasil dihapus" });
 });
 
 // Toggle Active / Public status
-app.patch("/api/products/:id/toggle", authenticateToken, (req: Request, res: Response) => {
+app.patch("/api/products/:id/toggle", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const product = memoryDb.products.find((p) => p.id === id);
@@ -710,7 +745,11 @@ app.patch("/api/products/:id/toggle", authenticateToken, (req: Request, res: Res
   }
   product.updated_at = new Date().toISOString();
 
-  persistProduct(product).catch(() => {});
+  try {
+    await persistProduct(product);
+  } catch (err) {
+    console.error("Gagal update status produk di Neon:", err);
+  }
   logActivity(currentUser.nama, "Update Status Produk", `Ubah ${field} produk ${product.nama_item}`);
   res.json({ message: "Status produk berhasil diubah", product });
 });
@@ -729,7 +768,7 @@ function generateInvoiceNumber(): string {
 }
 
 // Helper to automatically record order payments into cash ledger (Pemasukan Toko)
-function recordOrderCashPayment(params: {
+async function recordOrderCashPayment(params: {
   amount: number;
   invoiceNumber: string;
   customerName: string;
@@ -751,7 +790,7 @@ function recordOrderCashPayment(params: {
 
   const newTx = {
     id: newTxId,
-    tipe: "masuk",
+    tipe: "masuk" as const,
     kategori: "Pemasukan Toko",
     nominal,
     tanggal: params.date ? new Date(params.date).toISOString() : new Date().toISOString(),
@@ -764,7 +803,12 @@ function recordOrderCashPayment(params: {
   };
 
   memoryDb.transactions.push(newTx);
-  persistTransaction(newTx).catch(() => {});
+  try {
+    const saved = await persistTransaction(newTx);
+    if (saved && saved.id) newTx.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan transaksi kas order ke Neon:", err);
+  }
   return newTx;
 }
 
@@ -834,7 +878,7 @@ app.get("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Create Order
-app.post("/api/orders", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/orders", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const {
     nama_pelanggan,
@@ -924,12 +968,20 @@ app.post("/api/orders", authenticateToken, (req: Request, res: Response) => {
     return itemRecord;
   });
 
-  persistOrder(newOrder, savedItems).catch(() => {});
+  try {
+    const saved = await persistOrder(newOrder, savedItems);
+    if (saved && saved.id) {
+      newOrder.id = saved.id;
+      savedItems.forEach((si) => (si.order_id = saved.id));
+    }
+  } catch (err) {
+    console.error("Gagal simpan order ke Neon:", err);
+  }
   logActivity(currentUser.nama, "Buat Order Baru", `Nota ${invoiceNumber} untuk ${nama_pelanggan} (Total: Rp ${calculatedTotal.toLocaleString()})`);
 
   // Auto-record cash in to Pemasukan Toko if payment is made at order creation
   if (status_bayar === "lunas" && calculatedTotal > 0) {
-    recordOrderCashPayment({
+    await recordOrderCashPayment({
       amount: calculatedTotal,
       invoiceNumber,
       customerName: nama_pelanggan.trim(),
@@ -941,7 +993,7 @@ app.post("/api/orders", authenticateToken, (req: Request, res: Response) => {
   } else if (status_bayar === "dp") {
     const dpVal = Number(jumlah_dp) || 0;
     if (dpVal > 0) {
-      recordOrderCashPayment({
+      await recordOrderCashPayment({
         amount: dpVal,
         invoiceNumber,
         customerName: nama_pelanggan.trim(),
@@ -963,7 +1015,7 @@ app.post("/api/orders", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Update Order
-app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const orderIndex = memoryDb.orders.findIndex((o) => o.id === id);
@@ -1032,7 +1084,7 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
 
   // Check incremental payment received and record to Pemasukan Toko
   if (oldStatusBayar === "belum" && targetStatusBayar === "lunas" && calculatedTotal > 0) {
-    recordOrderCashPayment({
+    await recordOrderCashPayment({
       amount: calculatedTotal,
       invoiceNumber: oldOrder.nomor_nota,
       customerName,
@@ -1041,7 +1093,7 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
       notes: `Pelunasan Order (${oldOrder.nomor_nota}) - ${customerName}`,
     });
   } else if (oldStatusBayar === "belum" && targetStatusBayar === "dp" && targetDp > 0) {
-    recordOrderCashPayment({
+    await recordOrderCashPayment({
       amount: targetDp,
       invoiceNumber: oldOrder.nomor_nota,
       customerName,
@@ -1052,7 +1104,7 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
   } else if (oldStatusBayar === "dp" && targetStatusBayar === "lunas") {
     const remaining = Math.max(0, calculatedTotal - oldDp);
     if (remaining > 0) {
-      recordOrderCashPayment({
+      await recordOrderCashPayment({
         amount: remaining,
         invoiceNumber: oldOrder.nomor_nota,
         customerName,
@@ -1063,7 +1115,7 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
     }
   } else if (oldStatusBayar === "dp" && targetStatusBayar === "dp" && targetDp > oldDp) {
     const additionalDp = targetDp - oldDp;
-    recordOrderCashPayment({
+    await recordOrderCashPayment({
       amount: additionalDp,
       invoiceNumber: oldOrder.nomor_nota,
       customerName,
@@ -1126,7 +1178,11 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
   };
 
   const currentItems = memoryDb.orderItems.filter((i) => i.order_id === id);
-  persistOrder(memoryDb.orders[orderIndex], currentItems).catch(() => {});
+  try {
+    await persistOrder(memoryDb.orders[orderIndex], currentItems);
+  } catch (err) {
+    console.error("Gagal update order di Neon:", err);
+  }
   logActivity(currentUser.nama, "Update Order", `Memperbarui nota ${memoryDb.orders[orderIndex].nomor_nota}`);
 
   res.json({
@@ -1139,7 +1195,7 @@ app.put("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Update Order Status only (Quick Status change)
-app.patch("/api/orders/:id/status", authenticateToken, (req: Request, res: Response) => {
+app.patch("/api/orders/:id/status", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id);
@@ -1201,7 +1257,7 @@ app.patch("/api/orders/:id/status", authenticateToken, (req: Request, res: Respo
   // Auto-record cash in to Pemasukan Toko if payment status updated
   if (status_bayar && status_bayar !== oldStatusBayar) {
     if (oldStatusBayar === "belum" && status_bayar === "lunas" && orderTotal > 0) {
-      recordOrderCashPayment({
+      await recordOrderCashPayment({
         amount: orderTotal,
         invoiceNumber: order.nomor_nota,
         customerName: order.nama_pelanggan,
@@ -1212,7 +1268,7 @@ app.patch("/api/orders/:id/status", authenticateToken, (req: Request, res: Respo
     } else if (oldStatusBayar === "dp" && status_bayar === "lunas") {
       const remaining = Math.max(0, orderTotal - oldDp);
       if (remaining > 0) {
-        recordOrderCashPayment({
+        await recordOrderCashPayment({
           amount: remaining,
           invoiceNumber: order.nomor_nota,
           customerName: order.nama_pelanggan,
@@ -1225,14 +1281,18 @@ app.patch("/api/orders/:id/status", authenticateToken, (req: Request, res: Respo
   }
 
   const orderItems = memoryDb.orderItems.filter((i) => i.order_id === id);
-  persistOrder(order, orderItems).catch(() => {});
+  try {
+    await persistOrder(order, orderItems);
+  } catch (err) {
+    console.error("Gagal update status order di Neon:", err);
+  }
   logActivity(currentUser.nama, "Ubah Status Order", `Nota ${order.nomor_nota} diubah status menjadi: ${order.status}, bayar: ${order.status_bayar}`);
 
   res.json({ message: "Status order berhasil diperbarui", order });
 });
 
 // Generate / Get Share Link Tracking for Order (Admin auth required)
-app.post("/api/orders/:id/share", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/orders/:id/share", authenticateToken, async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id);
 
@@ -1258,7 +1318,11 @@ app.post("/api/orders/:id/share", authenticateToken, (req: Request, res: Respons
   }
 
   const orderItems = memoryDb.orderItems.filter((i) => i.order_id === id);
-  persistOrder(order, orderItems).catch(() => {});
+  try {
+    await persistOrder(order, orderItems);
+  } catch (err) {
+    console.error("Gagal update share link order di Neon:", err);
+  }
 
   // Determine origin URL
   const forwardedProto = (req.headers["x-forwarded-proto"] as string) || "https";
@@ -1284,7 +1348,7 @@ app.post("/api/orders/:id/share", authenticateToken, (req: Request, res: Respons
 });
 
 // Add Progress Note Milestone (Admin auth required)
-app.post("/api/orders/:id/progress-notes", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/orders/:id/progress-notes", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id);
@@ -1314,7 +1378,11 @@ app.post("/api/orders/:id/progress-notes", authenticateToken, (req: Request, res
   order.updated_at = new Date().toISOString();
 
   const orderItems = memoryDb.orderItems.filter((i) => i.order_id === id);
-  persistOrder(order, orderItems).catch(() => {});
+  try {
+    await persistOrder(order, orderItems);
+  } catch (err) {
+    console.error("Gagal update progres order di Neon:", err);
+  }
 
   logActivity(currentUser.nama, "Tambah Progres Order", `Menambahkan catatan progres pada nota ${order.nomor_nota}: ${detail.trim()}`);
 
@@ -1405,7 +1473,7 @@ app.get("/api/public/track/:token", (req: Request, res: Response) => {
 });
 
 // Delete Order
-app.delete("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.orders.findIndex((o) => o.id === id);
@@ -1417,7 +1485,11 @@ app.delete("/api/orders/:id", authenticateToken, (req: Request, res: Response) =
 
   const deleted = memoryDb.orders.splice(index, 1)[0];
   memoryDb.orderItems = memoryDb.orderItems.filter((i) => i.order_id !== id);
-  persistDeleteOrder(id).catch(() => {});
+  try {
+    await persistDeleteOrder(id);
+  } catch (err) {
+    console.error("Gagal hapus order di Neon:", err);
+  }
 
   logActivity(currentUser.nama, "Hapus Order", `Menghapus nota ${deleted.nomor_nota}`);
 
@@ -1463,7 +1535,7 @@ app.get("/api/vendors", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Add Vendor
-app.post("/api/vendors", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/vendors", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { nama_vendor, kategori_supply, kontak_nama, kontak, no_wa, link, alamat, catatan } = req.body;
 
@@ -1491,14 +1563,19 @@ app.post("/api/vendors", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.vendors.push(newVendor);
-  persistVendor(newVendor).catch(() => {});
+  try {
+    const saved = await persistVendor(newVendor);
+    if (saved && saved.id) newVendor.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan vendor ke Neon:", err);
+  }
   logActivity(currentUser.nama, "Tambah Vendor", `Menambahkan supplier ${newVendor.nama_vendor}`);
 
   res.status(201).json({ message: "Vendor berhasil ditambahkan", vendor: newVendor });
 });
 
 // Update Vendor
-app.put("/api/vendors/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/vendors/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.vendors.findIndex((v) => v.id === id);
@@ -1525,13 +1602,17 @@ app.put("/api/vendors/:id", authenticateToken, (req: Request, res: Response) => 
     updated_at: new Date().toISOString(),
   };
 
-  persistVendor(memoryDb.vendors[index]).catch(() => {});
+  try {
+    await persistVendor(memoryDb.vendors[index]);
+  } catch (err) {
+    console.error("Gagal update vendor di Neon:", err);
+  }
   logActivity(currentUser.nama, "Update Vendor", `Memperbarui vendor ${memoryDb.vendors[index].nama_vendor}`);
   res.json({ message: "Vendor berhasil diperbarui", vendor: memoryDb.vendors[index] });
 });
 
 // Delete Vendor
-app.delete("/api/vendors/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/vendors/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.vendors.findIndex((v) => v.id === id);
@@ -1547,7 +1628,11 @@ app.delete("/api/vendors/:id", authenticateToken, (req: Request, res: Response) 
     memoryDb.product_vendors = memoryDb.product_vendors.filter((pv) => pv.vendor_id !== id);
   }
 
-  persistDeleteVendor(id).catch(() => {});
+  try {
+    await persistDeleteVendor(id);
+  } catch (err) {
+    console.error("Gagal hapus vendor di Neon:", err);
+  }
   logActivity(currentUser.nama, "Hapus Vendor", `Menghapus supplier ${deleted.nama_vendor}`);
   res.json({ message: "Vendor berhasil dihapus" });
 });
@@ -1592,7 +1677,7 @@ app.get("/api/products/:id/vendors", authenticateToken, (req: Request, res: Resp
 });
 
 // Add vendor relation to product
-app.post("/api/products/:id/vendors", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/products/:id/vendors", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const productId = Number(req.params.id);
   const product = memoryDb.products.find((p) => p.id === productId);
@@ -1655,7 +1740,11 @@ app.post("/api/products/:id/vendors", authenticateToken, (req: Request, res: Res
       vendor_catatan: vendor.catatan || "",
     };
 
-    persistProductVendor(memoryDb.product_vendors[existingIndex]).catch(() => {});
+    try {
+      await persistProductVendor(memoryDb.product_vendors[existingIndex]);
+    } catch (err) {
+      console.error("Gagal update product_vendor di Neon:", err);
+    }
 
     logActivity(
       currentUser.nama,
@@ -1683,7 +1772,12 @@ app.post("/api/products/:id/vendors", authenticateToken, (req: Request, res: Res
   };
 
   memoryDb.product_vendors.push(newPV);
-  persistProductVendor(newPV).catch(() => {});
+  try {
+    const saved = await persistProductVendor(newPV);
+    if (saved && saved.id) newPV.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan product_vendor ke Neon:", err);
+  }
 
   const resultWithVendor = {
     ...newPV,
@@ -1704,7 +1798,7 @@ app.post("/api/products/:id/vendors", authenticateToken, (req: Request, res: Res
 });
 
 // Update product-vendor relation
-app.put("/api/product-vendors/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/product-vendors/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = (memoryDb.product_vendors || []).findIndex((pv) => pv.id === id);
@@ -1719,12 +1813,12 @@ app.put("/api/product-vendors/:id", authenticateToken, (req: Request, res: Respo
 
   if (is_default === true) {
     // Unset default on all other relations for this product
-    memoryDb.product_vendors.forEach((pv) => {
-      if (pv.product_id === targetPV.product_id) {
+    for (const pv of memoryDb.product_vendors) {
+      if (pv.product_id === targetPV.product_id && pv.id !== targetPV.id) {
         pv.is_default = false;
         persistProductVendor(pv).catch(() => {});
       }
-    });
+    }
   }
 
   memoryDb.product_vendors[index] = {
@@ -1735,7 +1829,11 @@ app.put("/api/product-vendors/:id", authenticateToken, (req: Request, res: Respo
     updated_at: new Date().toISOString(),
   };
 
-  persistProductVendor(memoryDb.product_vendors[index]).catch(() => {});
+  try {
+    await persistProductVendor(memoryDb.product_vendors[index]);
+  } catch (err) {
+    console.error("Gagal update product_vendor di Neon:", err);
+  }
 
   const vendor = (memoryDb.vendors || []).find((v) => v.id === targetPV.vendor_id);
   const product = memoryDb.products.find((p) => p.id === targetPV.product_id);
@@ -1760,7 +1858,7 @@ app.put("/api/product-vendors/:id", authenticateToken, (req: Request, res: Respo
 });
 
 // Delete product-vendor relation
-app.delete("/api/product-vendors/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/product-vendors/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = (memoryDb.product_vendors || []).findIndex((pv) => pv.id === id);
@@ -1771,7 +1869,11 @@ app.delete("/api/product-vendors/:id", authenticateToken, (req: Request, res: Re
   }
 
   const deleted = memoryDb.product_vendors.splice(index, 1)[0];
-  persistDeleteProductVendor(id).catch(() => {});
+  try {
+    await persistDeleteProductVendor(id);
+  } catch (err) {
+    console.error("Gagal hapus product_vendor di Neon:", err);
+  }
 
   const remainingForProduct = memoryDb.product_vendors.filter((pv) => pv.product_id === deleted.product_id);
 
@@ -1794,7 +1896,7 @@ app.delete("/api/product-vendors/:id", authenticateToken, (req: Request, res: Re
 });
 
 // Batch update products and product vendors from simulation
-app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/products/batch-apply-simulations", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { items } = req.body; // Array of { productId, newPrice, newVendorCost, vendorId, updatePrice, updateVendorCost }
 
@@ -1806,7 +1908,7 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
   let updatedProductCount = 0;
   let updatedVendorCostCount = 0;
 
-  items.forEach((item) => {
+  for (const item of items) {
     const prodId = Number(item.productId);
     const prod = memoryDb.products.find((p) => p.id === prodId);
 
@@ -1814,7 +1916,7 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
     if (prod && item.updatePrice && item.newPrice !== undefined && Number(item.newPrice) > 0) {
       prod.harga = Math.round(Number(item.newPrice));
       prod.updated_at = new Date().toISOString();
-      persistProduct(prod).catch(() => {});
+      await persistProduct(prod).catch(() => {});
       updatedProductCount++;
     }
 
@@ -1829,7 +1931,7 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
       if (pvIndex !== -1) {
         memoryDb.product_vendors[pvIndex].harga_modal = newCost;
         memoryDb.product_vendors[pvIndex].updated_at = new Date().toISOString();
-        persistProductVendor(memoryDb.product_vendors[pvIndex]).catch(() => {});
+        await persistProductVendor(memoryDb.product_vendors[pvIndex]).catch(() => {});
         updatedVendorCostCount++;
       } else {
         // Create new relation if not yet linked
@@ -1844,11 +1946,11 @@ app.post("/api/products/batch-apply-simulations", authenticateToken, (req: Reque
           updated_at: new Date().toISOString(),
         };
         memoryDb.product_vendors.push(newPvRecord);
-        persistProductVendor(newPvRecord).catch(() => {});
+        await persistProductVendor(newPvRecord).catch(() => {});
         updatedVendorCostCount++;
       }
     }
-  });
+  }
 
   logActivity(
     currentUser.nama,
@@ -1879,7 +1981,7 @@ app.get("/api/settings/margin-threshold", authenticateToken, (req: Request, res:
 });
 
 // Update Margin Threshold Settings
-app.put("/api/settings/margin-threshold", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/settings/margin-threshold", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { margin_threshold_good, margin_threshold_warning } = req.body;
 
@@ -1898,7 +2000,11 @@ app.put("/api/settings/margin-threshold", authenticateToken, (req: Request, res:
     updated_at: new Date().toISOString(),
   };
 
-  persistStoreSettings(memoryDb.storeSettings).catch(() => {});
+  try {
+    await persistStoreSettings(memoryDb.storeSettings);
+  } catch (err) {
+    console.error("Gagal simpan margin threshold ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -1935,7 +2041,7 @@ app.get("/api/purchases", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Add Purchase History
-app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/purchases", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { vendor_id, tanggal, nama_barang, qty, satuan, harga_satuan, catatan } = req.body;
 
@@ -1963,7 +2069,12 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.purchaseHistory.push(newPurchase);
-  persistPurchase(newPurchase).catch(() => {});
+  try {
+    const saved = await persistPurchase(newPurchase);
+    if (saved && saved.id) newPurchase.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan purchase ke Neon:", err);
+  }
 
   const vendor = memoryDb.vendors.find((v) => v.id === Number(vendor_id));
 
@@ -1976,7 +2087,7 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
 
     const newTx = {
       id: newTxId,
-      tipe: "keluar",
+      tipe: "keluar" as const,
       kategori: "Kulakan Bahan Baku",
       kantong: "modal",
       nominal: total,
@@ -1989,7 +2100,7 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
       updated_at: new Date().toISOString(),
     };
     memoryDb.transactions.push(newTx);
-    persistTransaction(newTx).catch(() => {});
+    await persistTransaction(newTx).catch(() => {});
   }
 
   logActivity(currentUser.nama, "Catat Kulakan", `Beli ${newPurchase.nama_barang} ke ${vendor?.nama_vendor || "Vendor"} (Rp ${total.toLocaleString()})`);
@@ -1998,7 +2109,7 @@ app.post("/api/purchases", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Delete Purchase
-app.delete("/api/purchases/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/purchases/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.purchaseHistory.findIndex((p) => p.id === id);
@@ -2009,7 +2120,11 @@ app.delete("/api/purchases/:id", authenticateToken, (req: Request, res: Response
   }
 
   const deleted = memoryDb.purchaseHistory.splice(index, 1)[0];
-  persistDeletePurchase(id).catch(() => {});
+  try {
+    await persistDeletePurchase(id);
+  } catch (err) {
+    console.error("Gagal hapus purchase di Neon:", err);
+  }
   logActivity(currentUser.nama, "Hapus Kulakan", `Menghapus catatan kulakan: ${deleted.nama_barang}`);
   res.json({ message: "Catatan kulakan berhasil dihapus" });
 });
@@ -2113,7 +2228,7 @@ app.get("/api/transactions/categories", authenticateToken, (req: Request, res: R
 });
 
 // Create Category (Optional: Adds a category or validates)
-app.post("/api/categories", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/categories", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { name, type } = req.body;
 
@@ -2140,7 +2255,12 @@ app.post("/api/categories", authenticateToken, (req: Request, res: Response) => 
 
   if (!exists) {
     memoryDb.categories.push(newCat);
-    persistCategory(newCat).catch(() => {});
+    try {
+      const saved = await persistCategory(newCat);
+      if (saved && saved.id) newCat.id = saved.id;
+    } catch (err) {
+      console.error("Gagal simpan category ke Neon:", err);
+    }
   }
 
   logActivity(
@@ -2156,7 +2276,7 @@ app.post("/api/categories", authenticateToken, (req: Request, res: Response) => 
 });
 
 // Update Category (Renames this category across transactions in history)
-app.put("/api/categories/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/categories/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const { name, oldName, type } = req.body;
@@ -2199,13 +2319,17 @@ app.put("/api/categories/:id", authenticateToken, (req: Request, res: Response) 
 });
 
 // Delete Category
-app.delete("/api/categories/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/categories/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const { categoryName } = req.query;
 
   if (id) {
-    persistDeleteCategory(id).catch(() => {});
+    try {
+      await persistDeleteCategory(id);
+    } catch (err) {
+      console.error("Gagal hapus category di Neon:", err);
+    }
     if (memoryDb.categories) {
       const idx = memoryDb.categories.findIndex((c) => c.id === id);
       if (idx !== -1) memoryDb.categories.splice(idx, 1);
@@ -2854,7 +2978,7 @@ app.post("/api/gemini/test", authenticateToken, async (req: Request, res: Respon
 });
 
 // Create Transaction (Single Pocket)
-app.post("/api/transactions", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/transactions", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items } = req.body;
 
@@ -2886,12 +3010,19 @@ app.post("/api/transactions", authenticateToken, (req: Request, res: Response) =
       const newCatId = memoryDb.categories.length
         ? Math.max(...memoryDb.categories.map((c) => c.id || 0)) + 1
         : 1;
-      memoryDb.categories.push({
+      const catObj = {
         id: newCatId,
         name: categorySnapshot,
         type: normType,
         created_at: new Date().toISOString(),
-      });
+      };
+      memoryDb.categories.push(catObj);
+      try {
+        const savedCat = await persistCategory(catObj);
+        if (savedCat && savedCat.id) catObj.id = savedCat.id;
+      } catch (err) {
+        console.error("Gagal persist category otomatis ke Neon:", err);
+      }
     }
   }
 
@@ -2925,7 +3056,12 @@ app.post("/api/transactions", authenticateToken, (req: Request, res: Response) =
   };
 
   memoryDb.transactions.push(newTx);
-  persistTransaction(newTx).catch(() => {});
+  try {
+    const savedTx = await persistTransaction(newTx);
+    if (savedTx && savedTx.id) newTx.id = savedTx.id;
+  } catch (err) {
+    console.error("Gagal simpan transaksi ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -2940,7 +3076,7 @@ app.post("/api/transactions", authenticateToken, (req: Request, res: Response) =
 });
 
 // Auto-allocate Order Revenue to 5 Cash Pockets (HPP Breakdown + Discount Rules)
-app.post("/api/transactions/auto-allocate-order", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/transactions/auto-allocate-order", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const {
     nomor_nota,
@@ -2998,7 +3134,7 @@ app.post("/api/transactions/auto-allocate-order", authenticateToken, (req: Reque
     { key: "margin", pocketType: "margin" },
   ];
 
-  pocketKeys.forEach(({ key, pocketType }) => {
+  for (const { key, pocketType } of pocketKeys) {
     const nominal = alokasi[key];
     if (nominal > 0) {
       const newId = memoryDb.transactions.length
@@ -3026,10 +3162,15 @@ app.post("/api/transactions/auto-allocate-order", authenticateToken, (req: Reque
       };
 
       memoryDb.transactions.push(newTx);
-      persistTransaction(newTx).catch(() => {});
+      try {
+        const savedTx = await persistTransaction(newTx);
+        if (savedTx && savedTx.id) newTx.id = savedTx.id;
+      } catch (err) {
+        console.error("Gagal persist transaksi alokasi ke Neon:", err);
+      }
       createdTransactions.push(newTx);
     }
-  });
+  }
 
   const totalAllocated = Object.values(alokasi).reduce((sum, v) => sum + v, 0);
 
@@ -3050,7 +3191,7 @@ app.post("/api/transactions/auto-allocate-order", authenticateToken, (req: Reque
 });
 
 // Update Transaction
-app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/transactions/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = (memoryDb.transactions || []).findIndex((t) => t.id === id);
@@ -3097,7 +3238,11 @@ app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response
     updated_at: new Date().toISOString(),
   };
 
-  persistTransaction(memoryDb.transactions[index]).catch(() => {});
+  try {
+    await persistTransaction(memoryDb.transactions[index]);
+  } catch (err) {
+    console.error("Gagal update transaksi ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3112,7 +3257,7 @@ app.put("/api/transactions/:id", authenticateToken, (req: Request, res: Response
 });
 
 // Delete Transaction
-app.delete("/api/transactions/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/transactions/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = (memoryDb.transactions || []).findIndex((t) => t.id === id);
@@ -3123,7 +3268,11 @@ app.delete("/api/transactions/:id", authenticateToken, (req: Request, res: Respo
   }
 
   const deleted = memoryDb.transactions.splice(index, 1)[0];
-  persistDeleteTransaction(id).catch(() => {});
+  try {
+    await persistDeleteTransaction(id);
+  } catch (err) {
+    console.error("Gagal hapus transaksi di Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3139,7 +3288,7 @@ app.delete("/api/transactions/:id", authenticateToken, (req: Request, res: Respo
 ======================================================== */
 
 // Transfer Saldo Antar Kantong Kas
-app.post("/api/transactions/transfer-kantong", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/transactions/transfer-kantong", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { dari_kantong, ke_kantong, nominal, tanggal, keterangan, target_id } = req.body;
 
@@ -3213,8 +3362,14 @@ app.post("/api/transactions/transfer-kantong", authenticateToken, (req: Request,
   };
 
   memoryDb.transactions.push(txOut, txIn);
-  persistTransaction(txOut).catch(() => {});
-  persistTransaction(txIn).catch(() => {});
+  try {
+    const savedOut = await persistTransaction(txOut);
+    if (savedOut && savedOut.id) txOut.id = savedOut.id;
+    const savedIn = await persistTransaction(txIn);
+    if (savedIn && savedIn.id) txIn.id = savedIn.id;
+  } catch (err) {
+    console.error("Gagal simpan transaksi mutasi ke Neon:", err);
+  }
 
   let updatedTarget = null;
   if (target_id) {
@@ -3229,7 +3384,11 @@ app.post("/api/transactions/transfer-kantong", authenticateToken, (req: Request,
       }
       memoryDb.savingsTargets[tIdx].updated_at = new Date().toISOString();
       updatedTarget = memoryDb.savingsTargets[tIdx];
-      persistSavingsTarget(updatedTarget).catch(() => {});
+      try {
+        await persistSavingsTarget(updatedTarget);
+      } catch (err) {
+        console.error("Gagal simpan target ke Neon:", err);
+      }
     }
   }
 
@@ -3254,7 +3413,7 @@ app.get("/api/savings-targets", authenticateToken, (req: Request, res: Response)
 });
 
 // Create Target
-app.post("/api/savings-targets", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/savings-targets", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const {
     tipe,
@@ -3297,7 +3456,12 @@ app.post("/api/savings-targets", authenticateToken, (req: Request, res: Response
   };
 
   memoryDb.savingsTargets.push(newTarget);
-  persistSavingsTarget(newTarget).catch(() => {});
+  try {
+    const saved = await persistSavingsTarget(newTarget);
+    if (saved && saved.id) newTarget.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan target ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3312,7 +3476,7 @@ app.post("/api/savings-targets", authenticateToken, (req: Request, res: Response
 });
 
 // Update Target
-app.put("/api/savings-targets/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/savings-targets/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
@@ -3360,7 +3524,11 @@ app.put("/api/savings-targets/:id", authenticateToken, (req: Request, res: Respo
     updated_at: new Date().toISOString(),
   };
 
-  persistSavingsTarget(memoryDb.savingsTargets[index]).catch(() => {});
+  try {
+    await persistSavingsTarget(memoryDb.savingsTargets[index]);
+  } catch (err) {
+    console.error("Gagal update target ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3375,7 +3543,7 @@ app.put("/api/savings-targets/:id", authenticateToken, (req: Request, res: Respo
 });
 
 // Delete Target
-app.delete("/api/savings-targets/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/savings-targets/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
@@ -3387,7 +3555,11 @@ app.delete("/api/savings-targets/:id", authenticateToken, (req: Request, res: Re
   }
 
   const deleted = memoryDb.savingsTargets.splice(index, 1)[0];
-  persistDeleteSavingsTarget(id).catch(() => {});
+  try {
+    await persistDeleteSavingsTarget(id);
+  } catch (err) {
+    console.error("Gagal hapus target di Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3399,7 +3571,7 @@ app.delete("/api/savings-targets/:id", authenticateToken, (req: Request, res: Re
 });
 
 // 1-Click Setor Tabungan / Bayar Angsuran dari Kantong Kas
-app.post("/api/savings-targets/:id/deposit", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/savings-targets/:id/deposit", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   if (!memoryDb.savingsTargets) memoryDb.savingsTargets = [];
@@ -3461,7 +3633,12 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, (req: Request, r
   };
 
   memoryDb.transactions.push(newTx);
-  persistTransaction(newTx).catch(() => {});
+  try {
+    const savedTx = await persistTransaction(newTx);
+    if (savedTx && savedTx.id) newTx.id = savedTx.id;
+  } catch (err) {
+    console.error("Gagal simpan transaksi deposit ke Neon:", err);
+  }
 
   // Update akumulasi terkumpul pada target
   const newTerkumpul = Math.round(Number(target.terkumpul_nominal || 0) + amount);
@@ -3471,7 +3648,11 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, (req: Request, r
   }
   target.updated_at = new Date().toISOString();
   memoryDb.savingsTargets[index] = target;
-  persistSavingsTarget(target).catch(() => {});
+  try {
+    await persistSavingsTarget(target);
+  } catch (err) {
+    console.error("Gagal simpan target ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3723,7 +3904,7 @@ app.get("/api/guides", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Create Guide
-app.post("/api/guides", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/guides", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const { category, title, content } = req.body;
 
@@ -3755,7 +3936,12 @@ app.post("/api/guides", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.guides.push(newGuide);
-  persistGuide(newGuide).catch(() => {});
+  try {
+    const saved = await persistGuide(newGuide);
+    if (saved && saved.id) newGuide.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan panduan ke Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3767,7 +3953,7 @@ app.post("/api/guides", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Update Guide
-app.put("/api/guides/:id", authenticateToken, (req: Request, res: Response) => {
+app.put("/api/guides/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const guideId = Number(req.params.id);
   const guideIndex = (memoryDb.guides || []).findIndex((g) => g.id === guideId);
@@ -3798,7 +3984,11 @@ app.put("/api/guides/:id", authenticateToken, (req: Request, res: Response) => {
   };
 
   memoryDb.guides[guideIndex] = updatedGuide;
-  persistGuide(updatedGuide).catch(() => {});
+  try {
+    await persistGuide(updatedGuide);
+  } catch (err) {
+    console.error("Gagal update panduan di Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -3810,7 +4000,7 @@ app.put("/api/guides/:id", authenticateToken, (req: Request, res: Response) => {
 });
 
 // Delete Guide
-app.delete("/api/guides/:id", authenticateToken, (req: Request, res: Response) => {
+app.delete("/api/guides/:id", authenticateToken, async (req: Request, res: Response) => {
   const currentUser = (req as any).user;
   const guideId = Number(req.params.id);
   const guideIndex = (memoryDb.guides || []).findIndex((g) => g.id === guideId);
@@ -3822,7 +4012,11 @@ app.delete("/api/guides/:id", authenticateToken, (req: Request, res: Response) =
 
   const deletedGuide = memoryDb.guides[guideIndex];
   memoryDb.guides.splice(guideIndex, 1);
-  persistDeleteGuide(guideId).catch(() => {});
+  try {
+    await persistDeleteGuide(guideId);
+  } catch (err) {
+    console.error("Gagal hapus panduan di Neon:", err);
+  }
 
   logActivity(
     currentUser.nama,
@@ -4164,5 +4358,162 @@ app.post("/api/send-invoice-email", optionalAuth, async (req: Request, res: Resp
     res.status(500).json({ error: err.message || "Gagal memproses pengiriman email." });
   }
 });
+
+// ============================================================================
+// PDF STREAMING ENDPOINTS (Kledo Style: Native PDF Viewer with PDF Icon & Title)
+// ============================================================================
+
+async function resolveOrderForPdf(idOrNota: string) {
+  if (!idOrNota) return null;
+  const cleanParam = decodeURIComponent(idOrNota).replace(/\.pdf$/i, "").trim();
+  const numId = Number(cleanParam);
+
+  // 1. Search in memoryDb
+  let order = memoryDb.orders.find(
+    (o) =>
+      (!isNaN(numId) && numId > 0 && o.id === numId) ||
+      (o.nomor_nota && o.nomor_nota.toLowerCase() === cleanParam.toLowerCase())
+  );
+
+  // 2. Search in Neon DB if not found in memory
+  if (!order && isNeonConnected) {
+    try {
+      if (!isNaN(numId) && numId > 0) {
+        const [dbOrder] = await db.select().from(schema.orders).where(eq(schema.orders.id, numId));
+        if (dbOrder) order = dbOrder as any;
+      }
+      if (!order && cleanParam) {
+        const [dbOrder] = await db.select().from(schema.orders).where(eq(schema.orders.nomor_nota, cleanParam));
+        if (dbOrder) order = dbOrder as any;
+      }
+    } catch (e) {
+      console.error("[PDF Endpoint] Neon order lookup error:", e);
+    }
+  }
+
+  if (!order) return null;
+
+  // Resolve items
+  let items = memoryDb.orderItems.filter((i) => i.order_id === order.id);
+  if ((!items || items.length === 0) && isNeonConnected) {
+    try {
+      const dbItems = await db.select().from(schema.orderItems).where(eq(schema.orderItems.order_id, order.id));
+      if (dbItems && dbItems.length > 0) items = dbItems as any;
+    } catch (e) {
+      console.error("[PDF Endpoint] Neon order items lookup error:", e);
+    }
+  }
+
+  const settings = memoryDb.storeSettings || null;
+  return { order: { ...order, items }, settings };
+}
+
+// 1. Endpoint Invoice PDF
+app.get(
+  ["/api/invoice/:id", "/api/invoice/:id.pdf", "/api/orders/:id/pdf", "/api/orders/:id.pdf", "/invoice/:id.pdf"],
+  async (req: Request, res: Response) => {
+    try {
+      const resolved = await resolveOrderForPdf(req.params.id);
+      if (!resolved) {
+        return res.status(404).send("Invoice tidak ditemukan.");
+      }
+
+      const paperFormat = (req.query.format as any) || "A4";
+      const isDownload = req.query.download === "true" || req.query.dl === "1";
+
+      const { doc, filename } = await generateInvoicePDF(
+        resolved.order,
+        resolved.settings,
+        { action: "blob", paperFormat }
+      );
+
+      const pdfArrayBuffer = doc.output("arraybuffer");
+      const pdfBuffer = Buffer.from(pdfArrayBuffer);
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `${isDownload ? "attachment" : "inline"}; filename="${filename}"`
+      );
+      res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120");
+      res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error("Error serving invoice PDF:", err);
+      res.status(500).send("Gagal mengenerate PDF Invoice: " + (err.message || err));
+    }
+  }
+);
+
+// 2. Endpoint Surat Jalan PDF
+app.get(
+  ["/api/surat-jalan/:id", "/api/surat-jalan/:id.pdf", "/surat-jalan/:id.pdf"],
+  async (req: Request, res: Response) => {
+    try {
+      const resolved = await resolveOrderForPdf(req.params.id);
+      if (!resolved) {
+        return res.status(404).send("Dokumen Surat Jalan tidak ditemukan.");
+      }
+
+      const paperFormat = (req.query.format as any) || "A4";
+      const isDownload = req.query.download === "true" || req.query.dl === "1";
+
+      const { doc, filename } = await generateSuratJalanPDF(
+        resolved.order,
+        resolved.settings,
+        { action: "blob", paperFormat }
+      );
+
+      const pdfArrayBuffer = doc.output("arraybuffer");
+      const pdfBuffer = Buffer.from(pdfArrayBuffer);
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `${isDownload ? "attachment" : "inline"}; filename="${filename}"`
+      );
+      res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120");
+      res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error("Error serving Surat Jalan PDF:", err);
+      res.status(500).send("Gagal mengenerate Surat Jalan PDF: " + (err.message || err));
+    }
+  }
+);
+
+// 3. Endpoint Tanda Terima PDF
+app.get(
+  ["/api/tanda-terima/:id", "/api/tanda-terima/:id.pdf", "/tanda-terima/:id.pdf"],
+  async (req: Request, res: Response) => {
+    try {
+      const resolved = await resolveOrderForPdf(req.params.id);
+      if (!resolved) {
+        return res.status(404).send("Dokumen Tanda Terima tidak ditemukan.");
+      }
+
+      const paperFormat = (req.query.format as any) || "A4";
+      const isDownload = req.query.download === "true" || req.query.dl === "1";
+
+      const { doc, filename } = await generateTandaTerimaPDF(
+        resolved.order,
+        resolved.settings,
+        { action: "blob", paperFormat }
+      );
+
+      const pdfArrayBuffer = doc.output("arraybuffer");
+      const pdfBuffer = Buffer.from(pdfArrayBuffer);
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `${isDownload ? "attachment" : "inline"}; filename="${filename}"`
+      );
+      res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120");
+      res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error("Error serving Tanda Terima PDF:", err);
+      res.status(500).send("Gagal mengenerate Tanda Terima PDF: " + (err.message || err));
+    }
+  }
+);
 
 export default app;
