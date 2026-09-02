@@ -59,6 +59,7 @@ export interface OrderItem {
   satuan: string;
   harga_satuan: number;
   subtotal: number;
+  diskon?: number;
   catatan_item?: string;
   // Dimensi / Panjang x Lebar (P x L) calculation
   panjang?: number | null;

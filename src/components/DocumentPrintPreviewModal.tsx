@@ -592,161 +592,157 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
               </div>
             ) : (
               /* ---------------------------------------------------- */
-              /* CASE 2: STANDARD A4 & A5 FULL SPREAD LAYOUT          */
-              /* Structured headers, 2-col metadata, clean data table */
+              /* CASE 2: STANDARD A4 & A5 KLEDO ACCOUNTING LAYOUT     */
+              /* Structured header, Kledo underlines, dark navy table */
               /* ---------------------------------------------------- */
-              <div className="flex flex-col gap-4">
-                {/* Header: Brand & Document Badge */}
-                <div className="flex items-start justify-between gap-4 pb-3 border-b border-slate-200">
-                  {/* Left: Brand info */}
-                  <div className="flex items-start gap-3 max-w-[60%]">
-                    {logoUrl && (
+              <div className="flex flex-col gap-6 text-slate-800">
+                {/* Header: Logo Kiri & Invoice Meta Kanan */}
+                <div className="flex items-start justify-between gap-6 pb-2">
+                  {/* Left: Brand Logo */}
+                  <div className="max-w-[55%]">
+                    {logoUrl ? (
                       <img
                         src={logoUrl}
                         alt="Logo Toko"
-                        className="w-12 h-12 object-contain rounded-md border border-slate-100 shrink-0"
+                        className="h-14 sm:h-16 w-auto object-contain shrink-0 mb-1"
                         referrerPolicy="no-referrer"
                       />
-                    )}
-                    <div>
-                      <h1 className="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-tight">
+                    ) : (
+                      <h1 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
                         {storeName}
                       </h1>
-                      <p className="text-xs italic text-slate-500 mt-0.5 leading-snug">
-                        {storeSlogan}
-                      </p>
-                      <p className="text-[11px] text-slate-600 mt-1 leading-snug">{storeAddress}</p>
-                      <p className="text-[11px] text-slate-600 font-mono mt-0.5">
-                        WA: {storePhone} • Email: {storeEmail}
-                      </p>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Right: Document Badge */}
-                  <div className="text-right bg-slate-50 dark:bg-slate-100 p-3 rounded-xl border border-slate-200 shadow-2xs min-w-[180px]">
-                    <span className="inline-block px-2.5 py-0.5 rounded text-[10.5px] font-bold uppercase tracking-wider bg-indigo-600 text-white">
+                  {/* Right: Invoice Title & Meta Data (Kledo Style) */}
+                  <div className="text-right flex flex-col items-end">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-blue-700 tracking-tight leading-none mb-3">
                       {docType === "faktur"
-                        ? "INVOICE PENJUALAN"
+                        ? "Invoice"
                         : docType === "surat_jalan"
-                        ? "SURAT JALAN"
-                        : "TANDA TERIMA DOKUMEN"}
-                    </span>
-                    <div className="text-sm sm:text-base font-black font-mono text-slate-900 mt-1">
-                      {order.nomor_nota}
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      Tgl: {formatTgl(order.tanggal_order)}
-                    </div>
-                  </div>
-                </div>
+                        ? "Surat Jalan"
+                        : "Tanda Terima"}
+                    </h2>
 
-                {/* Metadata Grid (Customer & Transaction Info) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                  {/* Column 1: Customer */}
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      TAGIHAN KEPADA:
-                    </span>
-                    <p className="text-sm font-bold text-slate-900">
-                      {order.nama_pelanggan || "Pelanggan Umum"}
-                    </p>
-                    <p className="text-slate-600 mt-0.5">No. WA / Telp: {order.no_wa || "-"}</p>
-                    {order.created_by && (
-                      <p className="text-slate-500 mt-0.5">Kasir / Admin: {order.created_by}</p>
-                    )}
-                  </div>
-
-                  {/* Column 2: Order Meta */}
-                  <div className="sm:text-right flex flex-col justify-between items-start sm:items-end">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                        DETAIL TRANSAKSI:
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-left min-w-[200px]">
+                      <span className="text-slate-500">Nomor</span>
+                      <span className="font-bold text-slate-900 text-right font-mono">
+                        {order.nomor_nota}
                       </span>
-                      <p className="text-slate-700">
-                        Tanggal Order:{" "}
-                        <span className="font-semibold text-slate-900">
-                          {formatTgl(order.tanggal_order)}
-                        </span>
-                      </p>
-                      {order.tanggal_ambil && (
-                        <p className="text-slate-700 mt-0.5">
-                          Tanggal Ambil:{" "}
-                          <span className="font-semibold text-slate-900">
-                            {formatTgl(order.tanggal_ambil)}
-                          </span>
-                        </p>
-                      )}
-                      <p className="text-slate-700 mt-0.5">
-                        Metode Bayar:{" "}
-                        <span className="font-semibold">{order.metode_bayar || "Cash"}</span>
-                      </p>
-                    </div>
 
-                    {docType === "faktur" && (
-                      <div className="mt-2">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
-                            isLunas
-                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                              : "bg-amber-100 text-amber-800 border border-amber-300"
-                          }`}
-                        >
-                          {isLunas ? (
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                          ) : (
-                            <AlertCircle className="w-3.5 h-3.5" />
-                          )}
-                          <span>{isLunas ? "LUNAS" : "BELUM LUNAS"}</span>
-                        </span>
-                      </div>
-                    )}
+                      <span className="text-slate-500">Tanggal</span>
+                      <span className="text-slate-800 text-right font-medium">
+                        {order.tanggal_order
+                          ? new Date(order.tanggal_order).toLocaleDateString("id-ID", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            })
+                          : "-"}
+                      </span>
+
+                      <span className="text-slate-500">Tgl. Jatuh Tempo</span>
+                      <span className="text-slate-800 text-right font-medium">
+                        {order.tanggal_ambil || order.tanggal_order
+                          ? new Date(order.tanggal_ambil || order.tanggal_order).toLocaleDateString(
+                              "id-ID",
+                              {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              }
+                            )
+                          : "-"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Table of Items */}
-                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                {/* 2-Column Parties Section (Informasi Perusahaan & Tagihan Kepada) with Kledo Underline */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 text-xs">
+                  {/* Left: Informasi Perusahaan */}
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900 pb-1 border-b-2 border-slate-700 mb-2">
+                      Informasi Perusahaan
+                    </h3>
+                    <div className="space-y-0.5 text-slate-600 leading-relaxed">
+                      <p className="font-bold text-sm text-blue-700">{storeName}</p>
+                      <p className="text-slate-600">{storeAddress}</p>
+                      {storePhone && <p>Telp: {storePhone}</p>}
+                      {storeEmail && <p>Email: {storeEmail}</p>}
+                    </div>
+                  </div>
+
+                  {/* Right: Tagihan Kepada */}
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900 pb-1 border-b-2 border-slate-700 mb-2">
+                      Tagihan Kepada
+                    </h3>
+                    <div className="space-y-0.5 text-slate-600 leading-relaxed">
+                      <p className="font-bold text-sm text-blue-700">
+                        {order.nama_pelanggan || "Pelanggan Umum"}
+                      </p>
+                      {order.no_wa && <p>Telp: {order.no_wa}</p>}
+                      {order.created_by && <p>Kasir / Admin: {order.created_by}</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kledo Signature Table (Dark Slate Navy Header) */}
+                <div className="overflow-x-auto rounded border border-slate-200">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                        <th className="py-2.5 px-3 w-10 text-center">No</th>
-                        <th className="py-2.5 px-3">Deskripsi Item Cetak</th>
-                        <th className="py-2.5 px-3 text-center w-20">Qty</th>
+                      <tr className="bg-[#243447] text-white font-semibold text-[11px]">
+                        <th className="py-2.5 px-3">Produk</th>
+                        <th className="py-2.5 px-3">Deskripsi</th>
+                        <th className="py-2.5 px-3 text-center">Kuantitas</th>
                         {docType === "faktur" && (
                           <>
-                            <th className="py-2.5 px-3 text-right w-28">Harga Satuan</th>
-                            <th className="py-2.5 px-3 text-right w-28">Total</th>
+                            <th className="py-2.5 px-3 text-right">Harga</th>
+                            <th className="py-2.5 px-3 text-center">Diskon</th>
+                            <th className="py-2.5 px-3 text-center">Pajak</th>
+                            <th className="py-2.5 px-3 text-right">Jumlah</th>
                           </>
                         )}
                         {docType !== "faktur" && (
-                          <th className="py-2.5 px-3 text-center w-28">Keterangan</th>
+                          <th className="py-2.5 px-3 text-center">Keterangan</th>
                         )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-800">
+                    <tbody className="divide-y divide-slate-200 text-slate-800">
                       {(order.items || []).map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80">
-                          <td className="py-2.5 px-3 text-center font-medium text-slate-500">
-                            {idx + 1}
+                        <tr key={idx} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
+                          <td className="py-2.5 px-3 font-semibold text-slate-900">
+                            {item.nama_item}
                           </td>
-                          <td className="py-2.5 px-3">
-                            <div className="font-semibold text-slate-900">{item.nama_item}</div>
-                            {(item.panjang || item.lebar || item.catatan) && (
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                {item.panjang && item.lebar ? `${item.panjang}m × ${item.lebar}m` : ""}
-                                {item.catatan ? ` • ${item.catatan}` : ""}
-                              </div>
-                            )}
+                          <td className="py-2.5 px-3 text-slate-600">
+                            {item.panjang && item.lebar
+                              ? `${item.panjang}m × ${item.lebar}m ${
+                                  item.jumlah_lembar && item.jumlah_lembar > 1
+                                    ? `(${item.jumlah_lembar} lbr)`
+                                    : ""
+                                }`
+                              : ""}
+                            {item.catatan_item
+                              ? `${item.panjang && item.lebar ? " • " : ""}${item.catatan_item}`
+                              : !item.panjang && !item.lebar
+                              ? "-"
+                              : ""}
                           </td>
                           <td className="py-2.5 px-3 text-center font-medium">
-                            {item.qty} {item.satuan || "pcs"}
+                            {item.qty} {item.satuan || ""}
                           </td>
                           {docType === "faktur" && (
                             <>
                               <td className="py-2.5 px-3 text-right font-mono">
-                                {formatRp(item.harga_satuan || 0)}
+                                {(item.harga_satuan || 0).toLocaleString("id-ID")}
                               </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {item.diskon ? `${item.diskon}%` : "0%"}
+                              </td>
+                              <td className="py-2.5 px-3 text-center text-slate-400">-</td>
                               <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                                {formatRp(item.subtotal || 0)}
+                                {(item.subtotal || 0).toLocaleString("id-ID")}
                               </td>
                             </>
                           )}
@@ -761,94 +757,104 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
                   </table>
                 </div>
 
-                {/* Bottom Section: Payment Summary & Notes */}
+                {/* Bottom Section: Summary & Terbilang */}
                 {docType === "faktur" ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start pt-2">
-                    {/* Left: Bank details & Terbilang */}
-                    <div className="flex flex-col gap-2">
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                        <span className="font-bold text-slate-800 block mb-1">
-                          PEMBAYARAN / TRANSFER BANK:
-                        </span>
-                        <p className="text-slate-600 leading-relaxed font-mono">{storeBank}</p>
-                      </div>
-
-                      <div className="p-2.5 bg-indigo-50/60 rounded-xl border border-indigo-100 text-xs">
-                        <span className="text-[10.5px] font-bold text-indigo-900 block mb-0.5">
-                          Terbilang:
-                        </span>
-                        <p className="italic text-indigo-800 font-medium">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 items-start pt-1">
+                    {/* Left: Terbilang & Rekening Bank */}
+                    <div className="space-y-4 text-xs">
+                      <div>
+                        <h4 className="font-bold text-slate-600 mb-1">Terbilang</h4>
+                        <p className="italic text-slate-900 font-medium leading-relaxed">
                           {angkaKeTerbilang(grandTotal)} Rupiah
                         </p>
                       </div>
+
+                      {storeBank && (
+                        <div className="pt-2 border-t border-slate-100">
+                          <span className="font-bold text-slate-600 block mb-0.5">
+                            Informasi Pembayaran / Rekening:
+                          </span>
+                          <p className="text-slate-800 font-mono leading-relaxed">{storeBank}</p>
+                        </div>
+                      )}
+
+                      {storeNotes && (
+                        <div className="text-[11px] text-slate-500 italic">
+                          <p>{storeNotes}</p>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Right: Calculations breakdown */}
-                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs flex flex-col gap-1.5">
+                    {/* Right: Kledo Calculations Breakdown */}
+                    <div className="space-y-2 text-xs">
                       <div className="flex justify-between text-slate-600">
-                        <span>Subtotal:</span>
-                        <span className="font-mono font-medium">{formatRp(subtotal)}</span>
+                        <span>Subtotal</span>
+                        <span className="font-medium text-slate-900 font-mono">
+                          {formatRp(subtotal)}
+                        </span>
                       </div>
 
                       {diskon > 0 && (
-                        <div className="flex justify-between text-emerald-700">
-                          <span>Diskon:</span>
+                        <div className="flex justify-between text-rose-600">
+                          <span>Diskon</span>
                           <span className="font-mono font-medium">-{formatRp(diskon)}</span>
                         </div>
                       )}
 
-                      {pajak > 0 && (
-                        <div className="flex justify-between text-slate-600">
-                          <span>PPN:</span>
-                          <span className="font-mono font-medium">+{formatRp(pajak)}</span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between font-bold text-sm pt-2 border-t border-slate-200 text-slate-900">
-                        <span>TOTAL BAYAR:</span>
-                        <span className="text-indigo-700 font-mono text-base font-black">
-                          {formatRp(grandTotal)}
-                        </span>
+                      {/* Total with Kledo thick underline */}
+                      <div className="flex justify-between font-bold text-sm text-slate-900 pt-2 pb-1 border-b-2 border-slate-800">
+                        <span>Total</span>
+                        <span className="font-mono text-base">{formatRp(grandTotal)}</span>
                       </div>
 
-                      {dp > 0 && (
+                      {dp > 0 && !isLunas && (
                         <div className="flex justify-between text-slate-600 pt-1">
-                          <span>Terbayar (DP):</span>
+                          <span>Terbayar (DP)</span>
                           <span className="font-mono font-medium">{formatRp(dp)}</span>
                         </div>
                       )}
 
-                      <div className="flex justify-between font-bold text-xs pt-1 border-t border-slate-200">
-                        <span>SISA TAGIHAN:</span>
+                      <div className="flex justify-between font-semibold text-xs pt-1">
+                        <span className="text-slate-600">Sisa Tagihan</span>
                         <span
-                          className={`font-mono text-sm ${
-                            sisa > 0 ? "text-red-600" : "text-emerald-700"
+                          className={`font-mono text-sm font-bold ${
+                            isLunas ? "text-emerald-700" : "text-rose-600"
                           }`}
                         >
-                          {formatRp(sisa)}
+                          {isLunas ? "Rp 0 (LUNAS)" : formatRp(sisa)}
                         </span>
                       </div>
                     </div>
                   </div>
                 ) : null}
 
-                {/* Signatures for Surat Jalan & Tanda Terima */}
+                {/* Signatures Footer */}
+                {docType === "faktur" && (
+                  <div className="flex justify-end text-xs pt-6">
+                    <div className="text-left min-w-[160px]">
+                      <p className="text-slate-600 mb-14">Dengan Hormat,</p>
+                      <p className="font-bold text-slate-900">{storeName}</p>
+                      <p className="text-slate-500 text-[11px]">Toko</p>
+                    </div>
+                  </div>
+                )}
+
                 {docType === "surat_jalan" && (
-                  <div className="grid grid-cols-3 gap-4 text-center text-xs pt-4">
+                  <div className="grid grid-cols-3 gap-4 text-center text-xs pt-6">
                     <div>
-                      <p className="text-slate-500 mb-10">Penerima,</p>
+                      <p className="text-slate-500 mb-12">Penerima,</p>
                       <p className="font-bold border-t border-slate-300 pt-1 text-slate-900">
                         ( {order.nama_pelanggan || "......................."} )
                       </p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-10">Driver / Kurir,</p>
+                      <p className="text-slate-500 mb-12">Driver / Kurir,</p>
                       <p className="font-bold border-t border-slate-300 pt-1 text-slate-900">
                         ( ....................... )
                       </p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-10">Hormat Kami,</p>
+                      <p className="text-slate-500 mb-12">Hormat Kami,</p>
                       <p className="font-bold border-t border-slate-300 pt-1 text-slate-900">
                         ( {order.created_by || storeName} )
                       </p>
@@ -857,26 +863,21 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
                 )}
 
                 {docType === "tanda_terima" && (
-                  <div className="grid grid-cols-2 gap-8 text-center text-xs pt-4">
+                  <div className="grid grid-cols-2 gap-8 text-center text-xs pt-6">
                     <div>
-                      <p className="text-slate-500 mb-10">Penerima Dokumen,</p>
+                      <p className="text-slate-500 mb-12">Penerima Dokumen,</p>
                       <p className="font-bold border-t border-slate-300 pt-1 text-slate-900">
                         ( {order.nama_pelanggan || "......................."} )
                       </p>
                     </div>
                     <div>
-                      <p className="text-slate-500 mb-10">Diserahkan Oleh,</p>
+                      <p className="text-slate-500 mb-12">Diserahkan Oleh,</p>
                       <p className="font-bold border-t border-slate-300 pt-1 text-slate-900">
                         ( {order.created_by || storeName} )
                       </p>
                     </div>
                   </div>
                 )}
-
-                {/* Footer Notes */}
-                <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 text-center leading-snug">
-                  <p className="italic">{storeNotes}</p>
-                </div>
               </div>
             )}
           </div>

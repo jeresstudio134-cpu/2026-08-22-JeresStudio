@@ -294,8 +294,22 @@ async function loadLogoForPdf(
   });
 }
 
+function formatDateDMY(dateStr?: string | null): string {
+  if (!dateStr) return "-";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "-";
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch {
+    return dateStr;
+  }
+}
+
 // =========================================================================
-// 1. GENERATE FAKTUR / INVOICE PDF (Multi-Layout: A4, A5, Thermal)
+// 1. GENERATE FAKTUR / INVOICE PDF (Kledo Accounting Layout: A4, A5, Thermal)
 // =========================================================================
 export async function generateInvoicePDF(
   order: Order,
@@ -321,41 +335,45 @@ export async function generateInvoicePDF(
 
   // Inisialisasi jsPDF berdasarkan format kertas
   let doc: jsPDF;
-  let pageWidth = 148;
-  let pageHeight = 210;
-  let marginX = 6; // Default A5 mepet tepi
+  let pageWidth = 210;
+  let pageHeight = 297;
+  let marginX = 14;
+  let marginY = 14;
 
   if (paperFormat === "A4") {
     pageWidth = 210;
     pageHeight = 297;
-    marginX = 8;
+    marginX = 14;
+    marginY = 14;
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
   } else if (paperFormat === "thermal58") {
     pageWidth = 58;
     pageHeight = 200;
     marginX = 3;
+    marginY = 5;
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [58, 200], compress: true });
   } else if (paperFormat === "thermal80") {
     pageWidth = 80;
     pageHeight = 220;
     marginX = 4;
+    marginY = 5;
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [80, 220], compress: true });
   } else {
     // Default A5
     pageWidth = 148;
     pageHeight = 210;
-    marginX = 6;
+    marginX = 10;
+    marginY = 10;
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5", compress: true });
   }
 
-  let currentY = paperFormat.startsWith("thermal") ? 5 : 5.5;
+  let currentY = marginY;
 
   // Data Toko
-  const storeName = finalSettings?.nama_toko || "JERES STUDIO";
-  const storeSlogan = finalSettings?.slogan || "Digital Printing & Custom Merchandise";
-  const storeAddress = finalSettings?.alamat || "Jl. Percetakan Raya No. 88";
-  const storePhone = finalSettings?.no_wa || "0812-3456-7890";
-  const storeEmail = finalSettings?.email || "jeresstudio@gmail.com";
+  const storeName = finalSettings?.nama_toko || "Jeres Studio";
+  const storeAddress = finalSettings?.alamat || "Jl. Mampang Prapatan 19C, Jakarta Selatan 12790";
+  const storePhone = finalSettings?.no_wa || "089685640976";
+  const storeEmail = finalSettings?.email || "jeresstudio134@gmail.com";
   const storeBank = finalSettings?.rekening_bank || "BCA: 1234567890 a/n Jeres Studio";
   const storeNotes = finalSettings?.catatan_nota || "Barang yang sudah dicetak/diambil tidak dapat dikembalikan. Harap periksa sebelum meninggalkan toko.";
 
@@ -442,6 +460,7 @@ export async function generateInvoicePDF(
 
     currentY += 4;
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(is80 ? 8 : 7);
     doc.text("Subtotal", marginX, currentY);
     doc.text(formatRupiah(order.subtotal || order.total), rightAlignX, currentY, { align: "right" });
 
@@ -483,500 +502,364 @@ export async function generateInvoicePDF(
     return { doc, blob: pdfBlob, blobUrl, filename };
   }
 
-  // ================= A4 & A5 STANDARD VECTOR LAYOUT =================
-  const scale = paperFormat === "A4" ? 1.35 : 1.05;
+  // ================= KLEDO ACCOUNTING VECTOR LAYOUT (A4 & A5) =================
+  const scale = paperFormat === "A4" ? 1.0 : 0.74;
 
-  let headerTextX = marginX;
-  const logoBoxSize = 15 * scale;
+  // 1. TOP HEADER: Logo Kiri & Info Invoice Kanan
+  const logoMaxW = 50 * scale;
+  const logoMaxH = 22 * scale;
+  let logoBottomY = currentY;
 
   if (logoData) {
     const aspect = (logoData.width || 1) / (logoData.height || 1);
-    let renderW = logoBoxSize;
-    let renderH = logoBoxSize;
+    let renderW = logoMaxW;
+    let renderH = logoMaxW / aspect;
 
-    if (aspect >= 1) {
-      renderW = logoBoxSize;
-      renderH = logoBoxSize / aspect;
-    } else {
-      renderH = logoBoxSize;
-      renderW = logoBoxSize * aspect;
+    if (renderH > logoMaxH) {
+      renderH = logoMaxH;
+      renderW = logoMaxH * aspect;
     }
-
-    const logoX = marginX + (logoBoxSize - renderW) / 2;
-    const logoY = currentY + (logoBoxSize - renderH) / 2;
 
     try {
       doc.addImage(
         logoData.dataUrl,
         "PNG",
-        logoX,
-        logoY,
+        marginX,
+        currentY,
         renderW,
         renderH,
         undefined,
         "FAST"
       );
-      headerTextX = marginX + logoBoxSize + (3 * scale);
+      logoBottomY = currentY + renderH;
     } catch (err) {
       console.warn("Gagal render logo di invoice:", err);
-      headerTextX = marginX;
     }
+  } else {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16 * scale);
+    doc.setTextColor(30, 41, 59);
+    doc.text(storeName.toUpperCase(), marginX, currentY + (8 * scale));
+    logoBottomY = currentY + (12 * scale);
   }
 
-  // Badge Header Kanan: "INVOICE PENJUALAN" (Compact & Modern)
-  const badgeW = (paperFormat === "A4" ? 44 : 38) * scale;
-  const badgeH = 14 * scale;
-  const badgeX = rightAlignX - badgeW;
-  const headerGap = 3.5 * scale;
-  const maxHeaderWidth = Math.max(badgeX - headerTextX - headerGap, 40);
-
-  doc.setFillColor(238, 242, 255);
-  doc.setDrawColor(199, 210, 254);
-  doc.roundedRect(badgeX, currentY, badgeW, badgeH, 1.5, 1.5, "FD");
+  // Header Kanan: Judul "Invoice" (Warna Biru Kledo)
+  const metaLabelX = rightAlignX - (52 * scale);
+  const metaValX = rightAlignX;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9 * scale);
-  doc.setTextColor(67, 56, 202);
-  doc.text("INVOICE PENJUALAN", badgeX + (badgeW / 2), currentY + (5.5 * scale), { align: "center" });
+  doc.setFontSize(22 * scale);
+  doc.setTextColor(30, 64, 175); // Kledo Royal Blue
+  doc.text("Invoice", rightAlignX, currentY + (6 * scale), { align: "right" });
 
+  let metaY = currentY + (12 * scale);
+  doc.setFontSize(8.8 * scale);
+
+  // Row 1: Nomor
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  doc.text("Nomor", metaLabelX, metaY);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(order.nomor_nota || "-", badgeX + (badgeW / 2), currentY + (11 * scale), { align: "center" });
+  doc.setTextColor(15, 23, 42);
+  doc.text(order.nomor_nota || "-", metaValX, metaY, { align: "right" });
+  metaY += 4.5 * scale;
 
-  // Header Brand Toko (Kiri) - Dihitung dinamis dan proporsional agar tidak saling bertabrakan
-  let brandY = currentY + (3.2 * scale);
+  // Row 2: Tanggal
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  doc.text("Tanggal", metaLabelX, metaY);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(15, 23, 42);
+  doc.text(formatDateDMY(order.tanggal_order), metaValX, metaY, { align: "right" });
+  metaY += 4.5 * scale;
 
-  // 1. Nama Toko
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5 * scale);
-  doc.setTextColor(30, 41, 59);
-  const nameLines: string[] = doc.splitTextToSize(storeName, maxHeaderWidth);
-  doc.text(nameLines, headerTextX, brandY);
-  brandY += nameLines.length * (4.2 * scale);
+  // Row 3: Tgl. Jatuh Tempo
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  doc.text("Tgl. Jatuh Tempo", metaLabelX, metaY);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(15, 23, 42);
+  const tempoDate = order.tanggal_ambil || order.tanggal_order;
+  doc.text(formatDateDMY(tempoDate), metaValX, metaY, { align: "right" });
+  metaY += 4.5 * scale;
 
-  // 2. Slogan Toko (Italic)
-  if (storeSlogan) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.5 * scale);
-    doc.setTextColor(100, 116, 139);
-    const sloganLines: string[] = doc.splitTextToSize(storeSlogan, maxHeaderWidth);
-    doc.text(sloganLines, headerTextX, brandY);
-    brandY += sloganLines.length * (3.1 * scale);
-  }
+  currentY = Math.max(logoBottomY, metaY) + (6 * scale);
 
-  // 3. Alamat Toko
-  if (storeAddress) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.0 * scale);
-    doc.setTextColor(71, 85, 105);
-    const addressLines: string[] = doc.splitTextToSize(storeAddress, maxHeaderWidth);
-    doc.text(addressLines, headerTextX, brandY);
-    brandY += addressLines.length * (2.8 * scale);
-  }
-
-  // 4. Kontak WA & Email
-  const contactText = [
-    storePhone ? `WA: ${storePhone}` : "",
-    storeEmail ? `Email: ${storeEmail}` : ""
-  ].filter(Boolean).join(" • ");
-  if (contactText) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.0 * scale);
-    doc.setTextColor(71, 85, 105);
-    const contactLines: string[] = doc.splitTextToSize(contactText, maxHeaderWidth);
-    doc.text(contactLines, headerTextX, brandY);
-    brandY += contactLines.length * (2.8 * scale);
-  }
-
-  // Tentukan batas bawah header
-  const headerBottomY = Math.max(
-    brandY,
-    currentY + badgeH,
-    logoData ? currentY + logoBoxSize : currentY + 12
-  );
-  currentY = headerBottomY + (2.5 * scale);
-
-  // Garis Pembatas Header
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.4);
-  doc.line(marginX, currentY, rightAlignX, currentY);
-
-  currentY += 4.5 * scale;
-
-  // 2 Kolom: Pelanggan & Detail Transaksi
-  const colWidth = (pageWidth - marginX * 2) / 2;
+  // 2. TWO-COLUMN PARTIES INFO: Informasi Perusahaan & Tagihan Kepada (Kledo Underline Style)
+  const colGap = 12 * scale;
+  const colWidth = (pageWidth - (marginX * 2) - colGap) / 2;
   const col1X = marginX;
-  const col2X = marginX + colWidth + 2;
+  const col2X = marginX + colWidth + colGap;
 
-  // Kolom Kiri
+  // Section Headers
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text("TAGIHAN KEPADA:", col1X, currentY);
+  doc.setFontSize(10 * scale);
+  doc.setTextColor(30, 41, 59);
+  doc.text("Informasi Perusahaan", col1X, currentY);
+  doc.text("Tagihan Kepada", col2X, currentY);
 
-  let col1Y = currentY + (4.8 * scale);
+  currentY += 2.2 * scale;
+
+  // Underlines for both columns (Kledo signature dark divider line)
+  doc.setDrawColor(36, 52, 71);
+  doc.setLineWidth(0.5);
+  doc.line(col1X, currentY, col1X + colWidth, currentY);
+  doc.line(col2X, currentY, col2X + colWidth, currentY);
+
+  currentY += 4.8 * scale;
+
+  // Kolom Kiri: Detail Perusahaan
+  let col1Y = currentY;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5 * scale);
-  doc.setTextColor(15, 23, 42);
-  const custNameLines: string[] = doc.splitTextToSize(order.nama_pelanggan || "Pelanggan Umum", colWidth - 4);
-  doc.text(custNameLines, col1X, col1Y);
-  col1Y += custNameLines.length * (4.2 * scale);
+  doc.setTextColor(30, 64, 175); // Kledo Blue Company Name
+  doc.text(storeName, col1X, col1Y);
+  col1Y += 4.2 * scale;
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.0 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`No. WA / Telp : ${order.no_wa || "-"}`, col1X, col1Y);
-  col1Y += (3.5 * scale);
-  if (order.created_by) {
-    doc.text(`Kasir / Admin : ${order.created_by}`, col1X, col1Y);
-    col1Y += (3.5 * scale);
-  }
-
-  // Kolom Kanan
-  doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text("DETAIL TRANSAKSI:", col2X, currentY);
-
-  let col2Y = currentY + (4.8 * scale);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.0 * scale);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Tanggal Order : ${formatTanggal(order.tanggal_order, true)}`, col2X, col2Y);
-  col2Y += (3.5 * scale);
+  const addrLines: string[] = doc.splitTextToSize(storeAddress, colWidth);
+  doc.text(addrLines, col1X, col1Y);
+  col1Y += addrLines.length * (3.8 * scale);
 
-  if (order.tanggal_ambil) {
-    doc.text(`Tanggal Ambil : ${formatTanggal(order.tanggal_ambil, false)}`, col2X, col2Y);
-    col2Y += (3.5 * scale);
-  } else {
-    doc.text(`Metode Bayar  : ${order.metode_bayar || "Cash"}`, col2X, col2Y);
-    col2Y += (3.5 * scale);
+  if (storePhone) {
+    doc.text(`Telp: ${storePhone}`, col1X, col1Y);
+    col1Y += 3.8 * scale;
+  }
+  if (storeEmail) {
+    doc.text(`Email: ${storeEmail}`, col1X, col1Y);
+    col1Y += 3.8 * scale;
   }
 
-  // Status Bayar Badge Pill
-  const statusBayar = (order.status_bayar || "belum").toLowerCase();
-  let badgeText = "BELUM BAYAR";
-  let badgeBg: [number, number, number] = [254, 226, 226];
-  let badgeTextCol: [number, number, number] = [185, 28, 28];
-
-  if (statusBayar === "lunas") {
-    badgeText = "LUNAS";
-    badgeBg = [209, 250, 229];
-    badgeTextCol = [4, 120, 87];
-  } else if (statusBayar === "dp") {
-    badgeText = `DP: ${formatRupiah(order.jumlah_dp)}`;
-    badgeBg = [243, 232, 255];
-    badgeTextCol = [107, 33, 168];
-  }
-
+  // Kolom Kanan: Detail Pelanggan (Tagihan Kepada)
+  let col2Y = currentY;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8 * scale);
-  const textWidth = doc.getTextWidth(badgeText);
-  const badgePillW = Math.max(38 * scale, textWidth + (8 * scale));
-  const badgePillX = rightAlignX - badgePillW;
-  const pillBoxY = currentY + (11.0 * scale);
-  const pillBoxH = 5.8 * scale;
+  doc.setFontSize(10.5 * scale);
+  doc.setTextColor(30, 64, 175); // Kledo Blue Customer Name
+  const custName = order.nama_pelanggan || "Pelanggan Umum";
+  const custNameLines: string[] = doc.splitTextToSize(custName, colWidth);
+  doc.text(custNameLines, col2X, col2Y);
+  col2Y += custNameLines.length * (4.2 * scale);
 
-  doc.setFillColor(...badgeBg);
-  doc.roundedRect(badgePillX, pillBoxY, badgePillW, pillBoxH, 1.2, 1.2, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5 * scale);
+  doc.setTextColor(71, 85, 105);
+  if (order.no_wa) {
+    doc.text(`Telp: ${order.no_wa}`, col2X, col2Y);
+    col2Y += 3.8 * scale;
+  }
+  if (order.created_by) {
+    doc.text(`Kasir / Admin: ${order.created_by}`, col2X, col2Y);
+    col2Y += 3.8 * scale;
+  }
 
-  doc.setTextColor(...badgeTextCol);
-  doc.text(badgeText, badgePillX + (badgePillW / 2), pillBoxY + (4.0 * scale), { align: "center" });
+  currentY = Math.max(col1Y, col2Y) + (6 * scale);
 
-  const metaBottomY = Math.max(col1Y, col2Y, pillBoxY + pillBoxH);
-  currentY = metaBottomY + (3.5 * scale);
-
-  // AutoTable Item Pesanan
+  // 3. TABEL PRODUK KLEDO (Dark Navy Header, 7 Kolom)
   const items = order.items && order.items.length > 0
     ? order.items
     : [{ nama_item: "Item Cetak", qty: 1, satuan: "pcs", harga_satuan: order.subtotal || order.total, subtotal: order.subtotal || order.total }];
 
-  const tableBody = items.map((item, index) => [
-    String(index + 1),
-    item.nama_item,
-    `${item.qty} ${item.satuan || "pcs"}`,
-    formatRupiah(item.harga_satuan),
-    formatRupiah(item.subtotal),
-  ]);
+  const tableBody = items.map((item) => {
+    let desc = "";
+    if (item.panjang && item.lebar) {
+      desc += `${item.panjang}${item.dimensi_unit || "m"} × ${item.lebar}${item.dimensi_unit || "m"}`;
+      if (item.jumlah_lembar && item.jumlah_lembar > 1) {
+        desc += ` (${item.jumlah_lembar} lbr)`;
+      }
+    }
+    if (item.catatan_item) {
+      desc += desc ? ` • ${item.catatan_item}` : item.catatan_item;
+    }
+
+    const diskonStr = item.diskon ? `${item.diskon}%` : "0%";
+    const pajakStr = "-";
+
+    return [
+      item.nama_item,
+      desc || "-",
+      `${item.qty} ${item.satuan || ""}`.trim(),
+      item.harga_satuan ? item.harga_satuan.toLocaleString("id-ID") : "0",
+      diskonStr,
+      pajakStr,
+      item.subtotal ? item.subtotal.toLocaleString("id-ID") : "0",
+    ];
+  });
 
   autoTable(doc, {
     startY: currentY,
     margin: { left: marginX, right: marginX },
-    head: [["NO", "DESKRIPSI ITEM CETAK", "QTY", "HARGA SATUAN", "SUBTOTAL"]],
+    head: [["Produk", "Deskripsi", "Kuantitas", "Harga", "Diskon", "Pajak", "Jumlah"]],
     body: tableBody,
-    theme: "grid",
+    theme: "plain",
     headStyles: {
-      fillColor: [30, 41, 59],
+      fillColor: [36, 52, 71], // Kledo Dark Slate Navy Header
       textColor: [255, 255, 255],
       fontSize: 8.5 * scale,
       fontStyle: "bold",
-      halign: "center",
-      cellPadding: 2.8 * scale,
+      halign: "left",
+      cellPadding: { top: 3.2 * scale, bottom: 3.2 * scale, left: 3 * scale, right: 3 * scale },
+      valign: "middle",
     },
     styles: {
       font: "helvetica",
       fontSize: 8.5 * scale,
       textColor: [30, 41, 59],
-      cellPadding: { top: 2.8 * scale, bottom: 2.8 * scale, left: 3 * scale, right: 3 * scale },
+      cellPadding: { top: 3 * scale, bottom: 3 * scale, left: 3 * scale, right: 3 * scale },
       lineColor: [226, 232, 240],
       lineWidth: 0.2,
-      valign: "middle",
+      valign: "top",
     },
     columnStyles: {
-      0: { halign: "center", cellWidth: 14 * scale },
-      1: { halign: "left" },
-      2: { halign: "center", cellWidth: 20 * scale },
-      3: { halign: "right", cellWidth: 28 * scale },
-      4: { halign: "right", cellWidth: 30 * scale },
-    },
-    didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 1) {
-        // Clear default text so autoTable draws standard matching cell background and borders
-        data.cell.text = [];
-
-        const rawItem = items[data.row.index];
-        if (rawItem) {
-          const colW = pageWidth - marginX * 2 - ((14 + 20 + 28 + 30) * scale);
-          const maxTextW = Math.max(colW - (6 * scale), 40);
-
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(8.5 * scale);
-          const nameLines = doc.splitTextToSize(rawItem.nama_item, maxTextW);
-
-          let neededHeight = (2.8 * scale) + (nameLines.length * 3.4 * scale) + (2.8 * scale);
-
-          if (rawItem.catatan_item) {
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(7.2 * scale);
-            const noteText = `Catatan: ${rawItem.catatan_item}`;
-            const noteLines = doc.splitTextToSize(noteText, maxTextW);
-
-            const nameH = nameLines.length * 3.4 * scale;
-            const gapH = 1.3 * scale;
-            const noteH = noteLines.length * 2.8 * scale;
-            const paddingH = 2.8 * scale * 2; // seimbang: 2.8mm atas, 2.8mm bawah
-
-            neededHeight = paddingH + nameH + gapH + noteH;
-          }
-
-          (data.cell as any).minCellHeight = neededHeight;
-          (data.row as any).height = neededHeight;
-        }
-      }
-    },
-    didDrawCell: (data) => {
-      // Customize cell rendering for column 1 (item name & catatan) with custom smaller note font
-      if (data.section === "body" && data.column.index === 1) {
-        const rawItem = items[data.row.index];
-        if (rawItem) {
-          const cell = data.cell;
-          const textX = cell.x + (3 * scale);
-          const maxTextW = cell.width - (6 * scale);
-
-          // 1. Nama Item (Font Normal / Bold)
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(8.5 * scale);
-          doc.setTextColor(15, 23, 42);
-          const nameLines = doc.splitTextToSize(rawItem.nama_item, maxTextW);
-          let currentYText = cell.y + (2.8 * scale) + (2.3 * scale);
-
-          for (let i = 0; i < nameLines.length; i++) {
-            doc.text(nameLines[i], textX, currentYText);
-            if (i < nameLines.length - 1) {
-              currentYText += (3.4 * scale);
-            }
-          }
-
-          // 2. Catatan Item (Font Lebih Kecil & Miring, Lurus Rata Kiri)
-          if (rawItem.catatan_item) {
-            currentYText += (1.3 * scale) + (2.3 * scale);
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(7.2 * scale);
-            doc.setTextColor(100, 116, 139);
-            const noteText = `Catatan: ${rawItem.catatan_item}`;
-            const noteLines = doc.splitTextToSize(noteText, maxTextW);
-
-            for (let i = 0; i < noteLines.length; i++) {
-              doc.text(noteLines[i], textX, currentYText);
-              if (i < noteLines.length - 1) {
-                currentYText += (2.8 * scale);
-              }
-            }
-          }
-        }
-      }
+      0: { halign: "left", fontStyle: "bold", cellWidth: 44 * scale },
+      1: { halign: "left", cellWidth: 42 * scale },
+      2: { halign: "center", cellWidth: 18 * scale },
+      3: { halign: "right", cellWidth: 24 * scale },
+      4: { halign: "center", cellWidth: 16 * scale },
+      5: { halign: "center", cellWidth: 14 * scale },
+      6: { halign: "right", cellWidth: 24 * scale },
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],
     },
   });
 
-  currentY = (doc as any).lastAutoTable.finalY + (4.5 * scale);
+  currentY = (doc as any).lastAutoTable.finalY + (5 * scale);
 
-  // Summary & Rekening Box
-  const summaryBoxWidth = 62 * scale;
-  const summaryBoxX = pageWidth - marginX - summaryBoxWidth;
-  const leftInfoWidth = summaryBoxX - marginX - (4 * scale);
+  // 4. SUMMARY (KANAN) & TERBILANG / PEMBAYARAN (KIRI)
+  const summaryWidth = 68 * scale;
+  const summaryX = rightAlignX - summaryWidth;
+  const leftInfoWidth = summaryX - marginX - (8 * scale);
 
-  // Kalkulasi Konten Kiri (Rekening & Catatan) secara dinamis agar TIDAK TUMPANG TINDIH
-  doc.setFontSize(8 * scale);
-  const bankLines: string[] = doc.splitTextToSize(storeBank, leftInfoWidth - 6);
-  const noteLines: string[] = order.catatan
-    ? doc.splitTextToSize(order.catatan, leftInfoWidth - 6)
-    : (storeNotes ? doc.splitTextToSize(storeNotes, leftInfoWidth - 6) : []);
-
-  let leftContentHeight = 6 * scale; // Header space
-  leftContentHeight += bankLines.length * (4.2 * scale);
-  if (order.catatan || storeNotes) {
-    leftContentHeight += 5 * scale; // Note header space
-    leftContentHeight += noteLines.length * (4 * scale);
-  }
-  leftContentHeight += 4 * scale; // Bottom padding
-
-  const boxHeight = Math.max(leftContentHeight, 28 * scale);
-
-  // Gambar Box Kiri (FD)
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(marginX, currentY, leftInfoWidth, boxHeight, 1.5, 1.5, "FD");
-
-  let boxTextY = currentY + (4.5 * scale);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text("PEMBAYARAN / TRANSFER:", marginX + 3, boxTextY);
-
-  boxTextY += 4.5 * scale;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(bankLines, marginX + 3, boxTextY);
-
-  boxTextY += (bankLines.length * (4.2 * scale)) + (1.5 * scale);
-
-  if (order.catatan) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8 * scale);
-    doc.setTextColor(71, 85, 105);
-    doc.text("Catatan Pesanan:", marginX + 3, boxTextY);
-    boxTextY += 4.2 * scale;
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 116, 139);
-    doc.text(noteLines, marginX + 3, boxTextY);
-  } else if (storeNotes) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.5 * scale);
-    doc.setTextColor(148, 163, 184);
-    doc.text(noteLines, marginX + 3, boxTextY);
-  }
-
-  // Summary (Kanan)
+  // --- KANAN: FINANCIAL SUMMARY ---
   let sumY = currentY + (2 * scale);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text("Subtotal", summaryBoxX, sumY);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(30, 41, 59);
-  doc.text(formatRupiah(order.subtotal || order.total), rightAlignX, sumY, { align: "right" });
+  doc.setFontSize(8.8 * scale);
+  doc.setTextColor(71, 85, 105);
 
+  // Subtotal
+  doc.text("Subtotal", summaryX, sumY);
+  doc.text(formatRupiah(order.subtotal || order.total), rightAlignX, sumY, { align: "right" });
+  sumY += 5 * scale;
+
+  // Diskon (jika ada)
   if (order.diskon > 0) {
-    sumY += 5 * scale;
-    doc.setFont("helvetica", "normal");
+    doc.text("Diskon", summaryX, sumY);
     doc.setTextColor(225, 29, 72);
-    doc.text("Diskon", summaryBoxX, sumY);
     doc.text(`-${formatRupiah(order.diskon)}`, rightAlignX, sumY, { align: "right" });
+    doc.setTextColor(71, 85, 105);
+    sumY += 5 * scale;
   }
 
-  sumY += 6 * scale;
-  doc.setFillColor(238, 242, 255);
-  doc.setDrawColor(199, 210, 254);
-  doc.roundedRect(summaryBoxX - 1, sumY - (3.5 * scale), summaryBoxWidth + 1, 8 * scale, 1, 1, "FD");
-
+  // Total (Garis Tebal Kledo di bawah kata Total & Nilai)
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5 * scale);
-  doc.setTextColor(67, 56, 202);
-  doc.text("TOTAL BAYAR", summaryBoxX + 2, sumY + (1.8 * scale));
-  doc.text(formatRupiah(order.total), rightAlignX - 2, sumY + (1.8 * scale), { align: "right" });
+  doc.setTextColor(15, 23, 42);
+  doc.text("Total", summaryX, sumY);
+  doc.text(formatRupiah(order.total), rightAlignX, sumY, { align: "right" });
 
-  const sisaTagihan = Math.max(0, order.total - (order.status_bayar === "lunas" ? order.total : (order.jumlah_dp || 0)));
-  if (order.jumlah_dp > 0 && order.status_bayar !== "lunas") {
-    sumY += 9 * scale;
+  // Garis bawah solid hitam di bawah baris Total
+  doc.setDrawColor(30, 41, 59);
+  doc.setLineWidth(0.6);
+  doc.line(summaryX, sumY + (1.8 * scale), rightAlignX, sumY + (1.8 * scale));
+  sumY += 6 * scale;
+
+  // Terbayar / DP jika ada
+  const dpAmount = order.jumlah_dp || 0;
+  const isLunas = order.status_bayar === "lunas";
+  const sisa = Math.max(0, order.total - (isLunas ? order.total : dpAmount));
+
+  if (dpAmount > 0 && !isLunas) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5 * scale);
-    doc.setTextColor(100, 116, 139);
-    doc.text("Uang Muka (DP)", summaryBoxX, sumY);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(30, 41, 59);
-    doc.text(formatRupiah(order.jumlah_dp), rightAlignX, sumY, { align: "right" });
-
-    sumY += 5 * scale;
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(225, 29, 72);
-    doc.text("Sisa Tagihan", summaryBoxX, sumY);
-    doc.text(formatRupiah(sisaTagihan), rightAlignX, sumY, { align: "right" });
+    doc.setTextColor(71, 85, 105);
+    doc.text("Terbayar (DP)", summaryX, sumY);
+    doc.text(formatRupiah(dpAmount), rightAlignX, sumY, { align: "right" });
+    sumY += 4.8 * scale;
   }
 
-  currentY = Math.max(currentY + boxHeight + (4 * scale), sumY + (7 * scale));
+  // Sisa Tagihan
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.8 * scale);
+  doc.setTextColor(71, 85, 105);
+  doc.text("Sisa Tagihan", summaryX, sumY);
+  doc.setFont("helvetica", isLunas ? "normal" : "bold");
+  doc.setTextColor(isLunas ? 4 : 185, isLunas ? 120 : 28, isLunas ? 87 : 28);
+  doc.text(isLunas ? "Rp 0 (LUNAS)" : formatRupiah(sisa), rightAlignX, sumY, { align: "right" });
+  sumY += 5 * scale;
 
-  // Terbilang
+  // --- KIRI: TERBILANG & INFO REKENING / CATATAN ---
+  let leftY = currentY + (2 * scale);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text("Terbilang:", marginX, currentY);
+  doc.setTextColor(71, 85, 105);
+  doc.text("Terbilang", marginX, leftY);
+  leftY += 4 * scale;
 
   doc.setFont("helvetica", "italic");
-  doc.setFontSize(9 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(terbilang(order.total), marginX + (16 * scale), currentY);
+  doc.setFontSize(8.5 * scale);
+  doc.setTextColor(15, 23, 42);
+  const terbilangLines: string[] = doc.splitTextToSize(`${terbilang(order.total)} Rupiah`, leftInfoWidth);
+  doc.text(terbilangLines, marginX, leftY);
+  leftY += (terbilangLines.length * (3.8 * scale)) + (3 * scale);
 
-  currentY += 8 * scale;
+  // Info Pembayaran / Rekening Bank
+  if (storeBank) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.0 * scale);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Informasi Pembayaran / Rekening:", marginX, leftY);
+    leftY += 3.8 * scale;
 
-  // Signature Footer (Model fixed ukuran A4 seimbang dan rapi)
-  let signatureY: number;
-  if (paperFormat === "A4") {
-    signatureY = Math.max(currentY + 18, 235);
-    if (signatureY > pageHeight - 45) {
-      signatureY = pageHeight - 45;
-    }
-  } else {
-    signatureY = Math.min(pageHeight - (32 * scale), currentY + (10 * scale));
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.0 * scale);
+    doc.setTextColor(30, 41, 59);
+    const bankLines: string[] = doc.splitTextToSize(storeBank, leftInfoWidth);
+    doc.text(bankLines, marginX, leftY);
+    leftY += bankLines.length * (3.5 * scale);
   }
 
-  // Tanda Tangan Kiri
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5 * scale);
-  doc.setTextColor(71, 85, 105);
-  doc.text("Tanda Terima / Pelanggan,", marginX + 4, signatureY);
-  doc.setDrawColor(203, 213, 225);
-  doc.line(marginX, signatureY + (18 * scale), marginX + (52 * scale), signatureY + (18 * scale));
-  doc.setFontSize(8.5 * scale);
-  doc.setTextColor(100, 116, 139);
-  doc.text(`( ${order.nama_pelanggan || "..................."} )`, marginX + 4, signatureY + (23 * scale));
+  if (order.catatan || storeNotes) {
+    leftY += 2 * scale;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5 * scale);
+    doc.setTextColor(100, 116, 139);
+    const noteText = order.catatan ? `Catatan: ${order.catatan}` : storeNotes;
+    const noteLines: string[] = doc.splitTextToSize(noteText, leftInfoWidth);
+    doc.text(noteLines, marginX, leftY);
+    leftY += noteLines.length * (3.2 * scale);
+  }
 
-  // Tanda Tangan Kanan
-  const rightSigX = pageWidth - marginX - (52 * scale);
+  currentY = Math.max(leftY, sumY) + (6 * scale);
+
+  // 5. SIGNATURE FOOTER (Kanan: Dengan Hormat, [Jeres Studio])
+  let signatureY: number;
+  if (paperFormat === "A4") {
+    signatureY = Math.max(currentY + 12, pageHeight - 48);
+  } else {
+    signatureY = Math.min(pageHeight - (30 * scale), currentY + (8 * scale));
+  }
+
+  const sigWidth = 48 * scale;
+  const sigX = rightAlignX - sigWidth;
+
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5 * scale);
+  doc.setFontSize(8.8 * scale);
   doc.setTextColor(71, 85, 105);
-  doc.text("Hormat Kami,", rightSigX + 4, signatureY);
-  doc.line(rightSigX, signatureY + (18 * scale), rightSigX + (52 * scale), signatureY + (18 * scale));
+  doc.text("Dengan Hormat,", sigX, signatureY);
+
+  // Spasi tanda tangan / stempel toko
+  const storeSigY = signatureY + (20 * scale);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5 * scale);
-  doc.setTextColor(30, 41, 59);
-  doc.text(`( ${storeName} )`, rightSigX + 4, signatureY + (23 * scale));
+  doc.setFontSize(9 * scale);
+  doc.setTextColor(15, 23, 42);
+  doc.text(storeName, sigX, storeSigY);
 
-  // Bottom text
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5 * scale);
-  doc.setTextColor(148, 163, 184);
-  doc.text(
-    `Dokumen resmi ${storeName} • Dicetak secara otomatis pada ${new Date().toLocaleString("id-ID")}`,
-    pageWidth / 2,
-    pageHeight - 8,
-    { align: "center" }
-  );
+  doc.setFontSize(8 * scale);
+  doc.setTextColor(100, 116, 139);
+  doc.text("Toko", sigX, storeSigY + (3.8 * scale));
 
   const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
   const filename = options.filename || `Invoice-${sanitizedOrderNo}.pdf`;
