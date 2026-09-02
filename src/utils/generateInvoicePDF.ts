@@ -142,6 +142,10 @@ export function safeHandlePdfOutput(
   // Action: "open" atau "print" -> Langsung buka di tab PDF viewer browser
   if (targetWindow && !targetWindow.closed) {
     try {
+      if (filename) {
+        const cleanTitle = filename.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
+        targetWindow.document.title = cleanTitle;
+      }
       targetWindow.location.href = blobUrl;
       return;
     } catch (err) {
@@ -366,6 +370,16 @@ export async function generateInvoicePDF(
     marginY = 10;
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5", compress: true });
   }
+
+  // Set Metadata PDF agar nama tab browser menjadi "Invoice [Nomor Nota]" seperti Kledo
+  const invoiceDocTitle = `Invoice ${order.nomor_nota || ""}`.trim();
+  doc.setProperties({
+    title: invoiceDocTitle,
+    subject: `Invoice Penjualan ${order.nomor_nota || ""}`.trim(),
+    author: finalSettings?.nama_toko || "Jeres Studio",
+    keywords: "invoice, faktur, nota, kledo",
+    creator: finalSettings?.nama_toko || "Jeres Studio",
+  });
 
   let currentY = marginY;
 
@@ -907,6 +921,16 @@ export async function generateSuratJalanPDF(
     compress: true,
   });
 
+  // Set Metadata PDF agar nama tab browser menjadi "Surat Jalan [Nomor Nota]"
+  const sjDocTitle = `Surat Jalan ${order.nomor_nota || ""}`.trim();
+  doc.setProperties({
+    title: sjDocTitle,
+    subject: `Surat Jalan ${order.nomor_nota || ""}`.trim(),
+    author: finalSettings?.nama_toko || "Jeres Studio",
+    keywords: "surat jalan, delivery order",
+    creator: finalSettings?.nama_toko || "Jeres Studio",
+  });
+
   const storeName = finalSettings?.nama_toko || "JERES STUDIO";
   const storeAddress = finalSettings?.alamat || "Jl. Percetakan Raya No. 88";
   const storePhone = finalSettings?.no_wa || "0812-3456-7890";
@@ -1142,6 +1166,16 @@ export async function generateTandaTerimaPDF(
     unit: "mm",
     format: isA4 ? "a4" : "a5",
     compress: true,
+  });
+
+  // Set Metadata PDF agar nama tab browser menjadi "Tanda Terima [Nomor Nota]"
+  const ttDocTitle = `Tanda Terima ${order.nomor_nota || ""}`.trim();
+  doc.setProperties({
+    title: ttDocTitle,
+    subject: `Tanda Terima ${order.nomor_nota || ""}`.trim(),
+    author: finalSettings?.nama_toko || "Jeres Studio",
+    keywords: "tanda terima, receipt",
+    creator: finalSettings?.nama_toko || "Jeres Studio",
   });
 
   const storeName = finalSettings?.nama_toko || "JERES STUDIO";
