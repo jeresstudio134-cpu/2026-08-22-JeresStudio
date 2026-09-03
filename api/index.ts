@@ -2500,8 +2500,18 @@ function alokasikanOrder(
 }
 
 // Get Transactions List with Fast Filters & Map Enrichment
-app.get("/api/transactions", authenticateToken, (req: Request, res: Response) => {
+app.get("/api/transactions", authenticateToken, async (req: Request, res: Response) => {
   const { tipe, kategori, kantong, startDate, endDate, search, metode } = req.query;
+
+  try {
+    const neonSql = getNeonSql();
+    if (neonSql) {
+      await fetchTransactionsFromNeon();
+    }
+  } catch (e) {
+    console.warn("Auto-sync fetch transactions warning:", e);
+  }
+
   let list = [...(memoryDb.transactions || [])];
 
   if (tipe && tipe !== "all") {
@@ -2630,9 +2640,19 @@ app.get("/api/transactions", authenticateToken, (req: Request, res: Response) =>
 });
 
 // Get Financial Summary (KPI, Category Breakdown & 5-Pocket Balances)
-app.get("/api/transactions/summary", authenticateToken, (req: Request, res: Response) => {
+app.get("/api/transactions/summary", authenticateToken, async (req: Request, res: Response) => {
   try {
     const { kantong, startDate, endDate } = req.query;
+
+    try {
+      const neonSql = getNeonSql();
+      if (neonSql) {
+        await fetchTransactionsFromNeon();
+      }
+    } catch (e) {
+      console.warn("Auto-sync summary transactions warning:", e);
+    }
+
     const transactions = memoryDb.transactions || [];
     const now = new Date();
     const currentMonth = now.getMonth();

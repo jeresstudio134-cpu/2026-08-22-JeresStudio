@@ -218,11 +218,22 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
       );
     `;
 
-    // Ensure items column exists in transactions for older tables
-    try {
-      await sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS items TEXT;`;
-    } catch {
-      // Column may already exist
+    // Ensure all columns exist in transactions for older tables
+    const alterTxColumns = [
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS kantong VARCHAR(50) DEFAULT 'margin' NOT NULL;`,
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS items TEXT;`,
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS referensi VARCHAR(100);`,
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS metode_pembayaran VARCHAR(50) DEFAULT 'Cash' NOT NULL;`,
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by VARCHAR(100) DEFAULT 'admin';`,
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL;`,
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL;`,
+    ];
+    for (const alter of alterTxColumns) {
+      try {
+        await alter;
+      } catch {
+        // Ignore if column already exists or table has it
+      }
     }
 
     // 12. store_settings
@@ -299,28 +310,23 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
 // Helper to auto-repair PostgreSQL serial sequences based on existing MAX(id)
 export async function repairPostgresSequences(sql: any) {
   if (!sql) return;
-  const tables = [
-    "admin_users",
-    "products",
-    "orders",
-    "order_items",
-    "vendors",
-    "product_vendors",
-    "purchase_history",
-    "activity_logs",
-    "guides",
-    "categories",
-    "transactions",
-    "savings_targets",
+  const queries = [
+    sql`SELECT setval(pg_get_serial_sequence('admin_users', 'id'), COALESCE((SELECT MAX(id) FROM admin_users), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('products', 'id'), COALESCE((SELECT MAX(id) FROM products), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('orders', 'id'), COALESCE((SELECT MAX(id) FROM orders), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('order_items', 'id'), COALESCE((SELECT MAX(id) FROM order_items), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('vendors', 'id'), COALESCE((SELECT MAX(id) FROM vendors), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('product_vendors', 'id'), COALESCE((SELECT MAX(id) FROM product_vendors), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('purchase_history', 'id'), COALESCE((SELECT MAX(id) FROM purchase_history), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('activity_logs', 'id'), COALESCE((SELECT MAX(id) FROM activity_logs), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('guides', 'id'), COALESCE((SELECT MAX(id) FROM guides), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('categories', 'id'), COALESCE((SELECT MAX(id) FROM categories), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('transactions', 'id'), COALESCE((SELECT MAX(id) FROM transactions), 1), true)`,
+    sql`SELECT setval(pg_get_serial_sequence('savings_targets', 'id'), COALESCE((SELECT MAX(id) FROM savings_targets), 1), true)`,
   ];
-  for (const tbl of tables) {
+  for (const q of queries) {
     try {
-      await sql`
-        SELECT setval(
-          pg_get_serial_sequence(${tbl}, 'id'),
-          COALESCE((SELECT MAX(id) FROM ${sql(tbl)}), 1)
-        );
-      `;
+      await q;
     } catch {
       // Ignore if table or sequence doesn't support setval
     }
@@ -1032,18 +1038,21 @@ export async function persistTransaction(tx: any) {
   const sql = getNeonSql();
   if (!sql) return tx;
   try {
-    const tanggal = tx.tanggal ? new Date(tx.tanggal) : new Date();
-    const itemsJson = tx.items ? JSON.stringify(tx.items) : null;
+    const safeTanggal = (tx.tanggal && !isNaN(new Date(tx.tanggal).getTime())) ? new Date(tx.tanggal) : new Date();
+    const safeCreatedAt = (tx.created_at && !isNaN(new Date(tx.created_at).getTime())) ? new Date(tx.created_at) : safeTanggal;
+    const safeUpdatedAt = (tx.updated_at && !isNaN(new Date(tx.updated_at).getTime())) ? new Date(tx.updated_at) : new Date();
+    const itemsJson = tx.items ? (typeof tx.items === "string" ? tx.items : JSON.stringify(tx.items)) : null;
     const nominal = Math.round(Number(tx.nominal) || 0);
 
-    if (tx.id && typeof tx.id === "number") {
+    if (tx.id && (typeof tx.id === "number" || !isNaN(Number(tx.id)))) {
+      const numId = Number(tx.id);
       await sql`
         INSERT INTO transactions (
-          id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, updated_at
+          id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, created_at, updated_at
         ) VALUES (
-          ${tx.id}, ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${nominal}, 
-          ${tanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
-          ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${new Date()}
+          ${numId}, ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${nominal}, 
+          ${safeTanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
+          ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${safeCreatedAt}, ${safeUpdatedAt}
         )
         ON CONFLICT (id) DO UPDATE SET
           tipe = EXCLUDED.tipe,
@@ -1055,16 +1064,16 @@ export async function persistTransaction(tx: any) {
           keterangan = EXCLUDED.keterangan,
           referensi = EXCLUDED.referensi,
           items = EXCLUDED.items,
-          updated_at = NOW();
+          updated_at = EXCLUDED.updated_at;
       `;
     } else {
       const res = await sql`
         INSERT INTO transactions (
-          tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, updated_at
+          tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, created_at, updated_at
         ) VALUES (
           ${tx.tipe}, ${tx.kategori}, ${tx.kantong || 'margin'}, ${nominal}, 
-          ${tanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
-          ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${new Date()}
+          ${safeTanggal}, ${tx.metode_pembayaran || 'Cash'}, ${tx.keterangan || ''}, 
+          ${tx.referensi || null}, ${itemsJson}, ${tx.created_by || 'admin'}, ${safeCreatedAt}, ${safeUpdatedAt}
         )
         RETURNING *;
       `;
@@ -1072,7 +1081,7 @@ export async function persistTransaction(tx: any) {
         tx.id = res[0].id;
       }
     }
-    await sql`SELECT setval(pg_get_serial_sequence('transactions', 'id'), COALESCE((SELECT MAX(id) FROM transactions), 1))`.catch(() => {});
+    await sql`SELECT setval(pg_get_serial_sequence('transactions', 'id'), COALESCE((SELECT MAX(id) FROM transactions), 1), true)`.catch(() => {});
     return tx;
   } catch (e) {
     console.error("Error persisting transaction to Neon:", e);
@@ -1819,51 +1828,73 @@ export async function fetchTransactionsFromNeon(filters?: {
   const sql = getNeonSql();
   if (!sql) return memoryDb.transactions || [];
 
-  const rows = await sql`SELECT * FROM transactions ORDER BY tanggal DESC, id DESC`;
-  const formatted = rows.map((t: any) => {
-    let items = undefined;
-    if (t.items) {
-      try {
-        items = typeof t.items === 'string' ? JSON.parse(t.items) : t.items;
-      } catch {
-        items = undefined;
+  try {
+    const rows = await sql`SELECT * FROM transactions ORDER BY tanggal DESC, id DESC`;
+    const formatted = rows.map((t: any) => {
+      let items = undefined;
+      if (t.items) {
+        try {
+          items = typeof t.items === 'string' ? JSON.parse(t.items) : t.items;
+        } catch {
+          items = undefined;
+        }
+      }
+      return {
+        id: t.id,
+        tipe: t.tipe as "masuk" | "keluar",
+        kategori: t.kategori,
+        kantong: t.kantong || "margin",
+        nominal: Number(t.nominal),
+        tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
+        metode_pembayaran: t.metode_pembayaran || "Cash",
+        keterangan: t.keterangan || "",
+        referensi: t.referensi || null,
+        items,
+        created_by: t.created_by || "admin",
+        created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+        updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+      };
+    });
+
+    // Bidirectional sync: If memoryDb has transactions that do not exist in Neon yet, push them to Neon
+    if (Array.isArray(memoryDb.transactions) && memoryDb.transactions.length > 0) {
+      const dbTxIds = new Set(formatted.map((t: any) => t.id));
+      const missingInNeon = memoryDb.transactions.filter((m: any) => !dbTxIds.has(m.id));
+      if (missingInNeon.length > 0) {
+        for (const mTx of missingInNeon) {
+          try {
+            await persistTransaction(mTx);
+            formatted.push(mTx);
+          } catch (e) {
+            console.warn("Auto-sync missing transaction to Neon:", e);
+          }
+        }
+        formatted.sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
       }
     }
-    return {
-      id: t.id,
-      tipe: t.tipe as "masuk" | "keluar",
-      kategori: t.kategori,
-      kantong: t.kantong || "margin",
-      nominal: Number(t.nominal),
-      tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
-      metode_pembayaran: t.metode_pembayaran || "Cash",
-      keterangan: t.keterangan || "",
-      referensi: t.referensi || null,
-      items,
-      created_by: t.created_by || "admin",
-      created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
-      updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
-    };
-  });
 
-  memoryDb.transactions = formatted;
+    memoryDb.transactions = formatted;
 
-  let results = formatted;
-  if (filters?.startDate) {
-    results = results.filter((t) => new Date(t.tanggal) >= new Date(filters.startDate!));
+    let results = formatted;
+    if (filters?.startDate) {
+      results = results.filter((t) => new Date(t.tanggal) >= new Date(filters.startDate!));
+    }
+    if (filters?.endDate) {
+      const end = new Date(filters.endDate);
+      end.setHours(23, 59, 59, 999);
+      results = results.filter((t) => new Date(t.tanggal) <= end);
+    }
+    if (filters?.kantong && filters.kantong !== "all") {
+      results = results.filter((t) => t.kantong === filters.kantong);
+    }
+    if (filters?.tipe && filters.tipe !== "all") {
+      results = results.filter((t) => t.tipe === filters.tipe);
+    }
+    return results;
+  } catch (err) {
+    console.warn("fetchTransactionsFromNeon warning, using memory fallback:", err);
+    return memoryDb.transactions || [];
   }
-  if (filters?.endDate) {
-    const end = new Date(filters.endDate);
-    end.setHours(23, 59, 59, 999);
-    results = results.filter((t) => new Date(t.tanggal) <= end);
-  }
-  if (filters?.kantong && filters.kantong !== "all") {
-    results = results.filter((t) => t.kantong === filters.kantong);
-  }
-  if (filters?.tipe && filters.tipe !== "all") {
-    results = results.filter((t) => t.tipe === filters.tipe);
-  }
-  return results;
 }
 
 export async function fetchSavingsTargetsFromNeon() {
