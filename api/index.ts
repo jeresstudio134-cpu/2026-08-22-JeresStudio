@@ -3126,6 +3126,8 @@ app.post("/api/transactions", authenticateToken, async (req: Request, res: Respo
   logActivity(
     currentUser.nama,
     tipe === "masuk" ? "Catat Pemasukan" : "Catat Pengeluaran",
+    `[${tipe.toUpperCase()}] [${assignedKantong.toUpperCase()}] ${newTx.kategori} - Rp ${Number(nominal).toLocaleString()} (${newTx.keterangan})`
+  );
 
   res.status(201).json({
     message: `Transaksi ${tipe === "masuk" ? "pemasukan" : "pengeluaran"} berhasil dicatat`,
