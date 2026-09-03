@@ -776,6 +776,58 @@ function generateInvoiceNumber(): string {
   return `INV-${dateStr}-${nextSeq}`;
 }
 
+// Helper Utama: Membuat & menyimpan transaksi kas dengan ID yang SELALU diambil dari Neon
+// (mencegah tabrakan ID antar instance serverless yang menyebabkan data hilang/tertimpa)
+async function createAndPersistTransaction(data: {
+  tipe: "masuk" | "keluar";
+  kategori: string;
+  kantong?: string;
+  nominal: number;
+  tanggal?: string;
+  metode_pembayaran?: string;
+  keterangan: string;
+  referensi?: string | null;
+  items?: any[];
+  created_by?: string;
+}) {
+  if (!memoryDb.transactions) memoryDb.transactions = [];
+
+  const txPayload: any = {
+    tipe: data.tipe,
+    kategori: data.kategori,
+    kantong: data.kantong || inferKantongKas(data.kategori, data.tipe),
+    nominal: Math.round(Number(data.nominal) || 0),
+    tanggal: data.tanggal ? new Date(data.tanggal).toISOString() : new Date().toISOString(),
+    metode_pembayaran: data.metode_pembayaran || "Cash",
+    keterangan: data.keterangan,
+    referensi: data.referensi || null,
+    items: data.items,
+    created_by: data.created_by || "Staff",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  // PENTING: jangan set txPayload.id di sini. Biarkan Neon (kolom SERIAL) yang
+  // menentukan id asli lewat RETURNING *, supaya tidak pernah tabrakan dengan
+  // baris lain walau memoryDb di instance serverless ini sedang tidak sinkron.
+  try {
+    const saved = await persistTransaction(txPayload);
+    if (saved && saved.id) txPayload.id = saved.id;
+  } catch (err) {
+    console.error("Gagal simpan transaksi ke Neon:", err);
+  }
+
+  // Fallback id lokal HANYA dipakai kalau DATABASE_URL belum dikonfigurasi sama sekali
+  if (!txPayload.id) {
+    txPayload.id = memoryDb.transactions.length
+      ? Math.max(...memoryDb.transactions.map((t: any) => t.id), 0) + 1
+      : 1;
+  }
+
+  memoryDb.transactions.push(txPayload);
+  return txPayload;
+}
+
 // Helper to automatically record order payments into cash ledger (Pemasukan Toko)
 async function recordOrderCashPayment(params: {
   amount: number;
@@ -789,36 +841,16 @@ async function recordOrderCashPayment(params: {
   const nominal = Math.round(Number(params.amount) || 0);
   if (nominal <= 0) return null;
 
-  if (!memoryDb.transactions) {
-    memoryDb.transactions = [];
-  }
-
-  const newTxId = memoryDb.transactions.length
-    ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
-    : 1;
-
-  const newTx = {
-    id: newTxId,
-    tipe: "masuk" as const,
+  return createAndPersistTransaction({
+    tipe: "masuk",
     kategori: "Pemasukan Toko",
     nominal,
-    tanggal: params.date ? new Date(params.date).toISOString() : new Date().toISOString(),
+    tanggal: params.date,
     metode_pembayaran: params.paymentMethod || "Cash",
     keterangan: params.notes || `Pemasukan Order ${params.invoiceNumber} - ${params.customerName}`,
     referensi: params.invoiceNumber,
     created_by: params.cashierName || "Kasir",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  memoryDb.transactions.push(newTx);
-  try {
-    const saved = await persistTransaction(newTx);
-    if (saved && saved.id) newTx.id = saved.id;
-  } catch (err) {
-    console.error("Gagal simpan transaksi kas order ke Neon:", err);
-  }
-  return newTx;
+  });
 }
 
 // Get Orders with filters
@@ -2113,14 +2145,8 @@ app.post("/api/purchases", authenticateToken, async (req: Request, res: Response
 
   // Auto-record to Kas Keluar (Kulakan Bahan Baku)
   if (total > 0) {
-    if (!memoryDb.transactions) memoryDb.transactions = [];
-    const newTxId = memoryDb.transactions.length
-      ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
-      : 1;
-
-    const newTx = {
-      id: newTxId,
-      tipe: "keluar" as const,
+    await createAndPersistTransaction({
+      tipe: "keluar",
       kategori: "Kulakan Bahan Baku",
       kantong: "modal",
       nominal: total,
@@ -2129,11 +2155,7 @@ app.post("/api/purchases", authenticateToken, async (req: Request, res: Response
       keterangan: `Kulakan ${newPurchase.nama_barang} (${vendor?.nama_vendor || "Vendor"}) - ${newPurchase.qty} ${newPurchase.satuan}`,
       referensi: `KULAK-${newPurchase.id}`,
       created_by: currentUser.nama || "Admin",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    memoryDb.transactions.push(newTx);
-    await persistTransaction(newTx).catch(() => {});
+    });
   }
 
   logActivity(currentUser.nama, "Catat Kulakan", `Beli ${newPurchase.nama_barang} ke ${vendor?.nama_vendor || "Vendor"} (Rp ${total.toLocaleString()})`);
@@ -3079,11 +3101,7 @@ app.post("/api/transactions", authenticateToken, async (req: Request, res: Respo
     }
   }
 
-  const newId = memoryDb.transactions.length
-    ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
-    : 1;
-
-  const validItems = Array.isArray(items)
+    const validItems = Array.isArray(items)
     ? items.map((it: any) => ({
         nama_item: String(it.nama_item || "").trim(),
         qty: Number(it.qty) || 1,
@@ -3092,35 +3110,22 @@ app.post("/api/transactions", authenticateToken, async (req: Request, res: Respo
       })).filter((it: any) => it.nama_item)
     : undefined;
 
-  const newTx = {
-    id: newId,
+  const newTx = await createAndPersistTransaction({
     tipe,
     kategori: categorySnapshot,
     kantong: assignedKantong,
     nominal: Number(nominal),
-    tanggal: tanggal ? new Date(tanggal).toISOString() : new Date().toISOString(),
-    metode_pembayaran: metode_pembayaran || "Cash",
+    tanggal,
+    metode_pembayaran,
     keterangan: keterangan.trim(),
     referensi: referensi ? referensi.trim() : "",
     items: validItems,
     created_by: currentUser.nama || "Staff",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  memoryDb.transactions.push(newTx);
-  try {
-    const savedTx = await persistTransaction(newTx);
-    if (savedTx && savedTx.id) newTx.id = savedTx.id;
-  } catch (err) {
-    console.error("Gagal simpan transaksi ke Neon:", err);
-  }
+  });
 
   logActivity(
     currentUser.nama,
     tipe === "masuk" ? "Catat Pemasukan" : "Catat Pengeluaran",
-    `[${tipe.toUpperCase()}] [${assignedKantong.toUpperCase()}] ${newTx.kategori} - Rp ${Number(nominal).toLocaleString()} (${newTx.keterangan})`
-  );
 
   res.status(201).json({
     message: `Transaksi ${tipe === "masuk" ? "pemasukan" : "pengeluaran"} berhasil dicatat`,
@@ -3190,18 +3195,13 @@ app.post("/api/transactions/auto-allocate-order", authenticateToken, async (req:
   for (const { key, pocketType } of pocketKeys) {
     const nominal = alokasi[key];
     if (nominal > 0) {
-      const newId = memoryDb.transactions.length
-        ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
-        : 1;
-
       const pocketInfo = pocketDescriptions[pocketType];
       const desc = keterangan
         ? `${pocketInfo.label} - ${keterangan} ${customer_name ? `(${customer_name})` : ""}`
         : `${pocketInfo.label} - Order ${refCode} ${customer_name ? `(${customer_name})` : ""}`;
 
-      const newTx = {
-        id: newId,
-        tipe: "masuk" as const,
+      const newTx = await createAndPersistTransaction({
+        tipe: "masuk",
         kategori: pocketInfo.kategori,
         kantong: pocketType,
         nominal,
@@ -3210,17 +3210,7 @@ app.post("/api/transactions/auto-allocate-order", authenticateToken, async (req:
         keterangan: desc.trim(),
         referensi: refCode,
         created_by: currentUser.nama || "Staff",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      memoryDb.transactions.push(newTx);
-      try {
-        const savedTx = await persistTransaction(newTx);
-        if (savedTx && savedTx.id) newTx.id = savedTx.id;
-      } catch (err) {
-        console.error("Gagal persist transaksi alokasi ke Neon:", err);
-      }
+      });
       createdTransactions.push(newTx);
     }
   }
@@ -3376,13 +3366,9 @@ app.post("/api/transactions/transfer-kantong", authenticateToken, async (req: Re
   const baseKet = (keterangan || "").trim() || `Pindah saldo dari Kantong ${pocketLabels[source]} ke ${pocketLabels[dest]}`;
   const refCode = `TRF-${Date.now().toString().slice(-6)}`;
 
-  const id1 = memoryDb.transactions.length ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1 : 1;
-  const id2 = id1 + 1;
-
   // 1. Transaksi Keluar dari Kantong Asal
-  const txOut = {
-    id: id1,
-    tipe: "keluar" as const,
+  const txOut = await createAndPersistTransaction({
+    tipe: "keluar",
     kategori: "Pindah Saldo Kas",
     kantong: source,
     nominal: amount,
@@ -3391,14 +3377,11 @@ app.post("/api/transactions/transfer-kantong", authenticateToken, async (req: Re
     keterangan: `${baseKet} [Transfer Keluar]`,
     referensi: refCode,
     created_by: currentUser.nama || "Owner",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
+  });
 
   // 2. Transaksi Masuk ke Kantong Tujuan
-  const txIn = {
-    id: id2,
-    tipe: "masuk" as const,
+  const txIn = await createAndPersistTransaction({
+    tipe: "masuk",
     kategori: "Pindah Saldo Kas",
     kantong: dest,
     nominal: amount,
@@ -3407,19 +3390,7 @@ app.post("/api/transactions/transfer-kantong", authenticateToken, async (req: Re
     keterangan: `${baseKet} [Transfer Masuk]`,
     referensi: refCode,
     created_by: currentUser.nama || "Owner",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  memoryDb.transactions.push(txOut, txIn);
-  try {
-    const savedOut = await persistTransaction(txOut);
-    if (savedOut && savedOut.id) txOut.id = savedOut.id;
-    const savedIn = await persistTransaction(txIn);
-    if (savedIn && savedIn.id) txIn.id = savedIn.id;
-  } catch (err) {
-    console.error("Gagal simpan transaksi mutasi ke Neon:", err);
-  }
+  });
 
   let updatedTarget = null;
   if (target_id) {
@@ -3645,12 +3616,6 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, async (req: Requ
   const isAngsuran = target.tipe === "angsuran";
   const categoryName = isAngsuran ? "Pembayaran Angsuran & Cicilan" : "Tabungan & Investasi";
 
-  if (!memoryDb.transactions) memoryDb.transactions = [];
-
-  const newTxId = memoryDb.transactions.length
-    ? Math.max(...memoryDb.transactions.map((t) => t.id)) + 1
-    : 1;
-
   const defaultNote = isAngsuran
     ? `Bayar Angsuran/Cicilan '${target.nama}'`
     : `Setor Tabungan/Dana Cadangan '${target.nama}'`;
@@ -3659,9 +3624,8 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, async (req: Requ
   const txDate = tanggal ? new Date(tanggal).toISOString() : new Date().toISOString();
 
   // Buat transaksi pengeluaran kas dari kantong yang dipilih
-  const newTx = {
-    id: newTxId,
-    tipe: "keluar" as const,
+  const newTx = await createAndPersistTransaction({
+    tipe: "keluar",
     kategori: categoryName,
     kantong: pocketSource,
     nominal: amount,
@@ -3678,17 +3642,7 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, async (req: Requ
       },
     ],
     created_by: currentUser.nama || "Owner",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  memoryDb.transactions.push(newTx);
-  try {
-    const savedTx = await persistTransaction(newTx);
-    if (savedTx && savedTx.id) newTx.id = savedTx.id;
-  } catch (err) {
-    console.error("Gagal simpan transaksi deposit ke Neon:", err);
-  }
+  });
 
   // Update akumulasi terkumpul pada target
   const newTerkumpul = Math.round(Number(target.terkumpul_nominal || 0) + amount);
