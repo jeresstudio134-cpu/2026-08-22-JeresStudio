@@ -40,6 +40,16 @@ import {
   persistDeletePurchase,
   persistSavingsTarget,
   persistDeleteSavingsTarget,
+  fetchOrdersFromNeon,
+  fetchSingleOrderFromNeon,
+  fetchProductsFromNeon,
+  fetchVendorsFromNeon,
+  fetchTransactionsFromNeon,
+  fetchSavingsTargetsFromNeon,
+  fetchPurchasesFromNeon,
+  fetchGuidesFromNeon,
+  fetchDashboardStatsFromNeon,
+  forceFullSync,
 } from "../src/db/neonService.js";
 
 const app = express();
@@ -131,6 +141,7 @@ const handleDbSync = async (req: Request, res: Response) => {
       });
       return;
     }
+    await initNeonTables();
     await syncFromNeonToMemory(sql);
     await repairPostgresSequences(sql);
     res.json({
@@ -710,18 +721,16 @@ app.delete("/api/products/:id", authenticateToken, async (req: Request, res: Res
   const id = Number(req.params.id);
   const index = memoryDb.products.findIndex((p) => p.id === id);
 
-  if (index === -1) {
-    res.status(404).json({ error: "Produk tidak ditemukan." });
-    return;
-  }
-
-  const deleted = memoryDb.products.splice(index, 1)[0];
+  const deleted = index !== -1 ? memoryDb.products.splice(index, 1)[0] : null;
   try {
     await persistDeleteProduct(id);
   } catch (err) {
     console.error("Gagal hapus produk di Neon:", err);
   }
-  logActivity(currentUser.nama, "Hapus Produk", `Menghapus produk ${deleted.nama_item}`);
+
+  if (deleted) {
+    logActivity(currentUser.nama, "Hapus Produk", `Menghapus produk ${deleted.nama_item}`);
+  }
 
   res.json({ message: "Produk berhasil dihapus" });
 });
@@ -813,53 +822,72 @@ async function recordOrderCashPayment(params: {
 }
 
 // Get Orders with filters
-app.get("/api/orders", authenticateToken, (req: Request, res: Response) => {
+app.get("/api/orders", authenticateToken, async (req: Request, res: Response) => {
   const { status, status_bayar, search, startDate, endDate } = req.query;
 
-  let results = [...memoryDb.orders];
+  try {
+    const ordersWithItems = await fetchOrdersFromNeon({
+      status: status as string,
+      status_bayar: status_bayar as string,
+      search: search as string,
+      startDate: startDate as string,
+      endDate: endDate as string,
+    });
+    res.json({ orders: ordersWithItems });
+  } catch (e) {
+    let results = [...memoryDb.orders];
 
-  if (status && status !== "all") {
-    results = results.filter((o) => o.status === status);
+    if (status && status !== "all") {
+      results = results.filter((o) => o.status === status);
+    }
+
+    if (status_bayar && status_bayar !== "all") {
+      results = results.filter((o) => o.status_bayar === status_bayar);
+    }
+
+    if (startDate) {
+      results = results.filter((o) => new Date(o.tanggal_order) >= new Date(startDate as string));
+    }
+
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+      results = results.filter((o) => new Date(o.tanggal_order) <= end);
+    }
+
+    if (search) {
+      const q = (search as string).toLowerCase();
+      results = results.filter(
+        (o) =>
+          o.nomor_nota.toLowerCase().includes(q) ||
+          o.nama_pelanggan.toLowerCase().includes(q) ||
+          o.no_wa.includes(q)
+      );
+    }
+
+    // Attach items to each order
+    const ordersWithItems = results.map((order) => ({
+      ...order,
+      items: memoryDb.orderItems.filter((item) => item.order_id === order.id),
+    }));
+
+    // Sort latest first
+    ordersWithItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    res.json({ orders: ordersWithItems });
   }
-
-  if (status_bayar && status_bayar !== "all") {
-    results = results.filter((o) => o.status_bayar === status_bayar);
-  }
-
-  if (startDate) {
-    results = results.filter((o) => new Date(o.tanggal_order) >= new Date(startDate as string));
-  }
-
-  if (endDate) {
-    const end = new Date(endDate as string);
-    end.setHours(23, 59, 59, 999);
-    results = results.filter((o) => new Date(o.tanggal_order) <= end);
-  }
-
-  if (search) {
-    const q = (search as string).toLowerCase();
-    results = results.filter(
-      (o) =>
-        o.nomor_nota.toLowerCase().includes(q) ||
-        o.nama_pelanggan.toLowerCase().includes(q) ||
-        o.no_wa.includes(q)
-    );
-  }
-
-  // Attach items to each order
-  const ordersWithItems = results.map((order) => ({
-    ...order,
-    items: memoryDb.orderItems.filter((item) => item.order_id === order.id),
-  }));
-
-  // Sort latest first
-  ordersWithItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-  res.json({ orders: ordersWithItems });
 });
 
 // Get Single Order (for detail / print invoice)
-app.get("/api/orders/:id", authenticateToken, (req: Request, res: Response) => {
+app.get("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const orderWithItems = await fetchSingleOrderFromNeon(req.params.id);
+    if (orderWithItems) {
+      res.json({ order: orderWithItems });
+      return;
+    }
+  } catch (e) {}
+
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id || o.nomor_nota === req.params.id);
 
@@ -1478,12 +1506,7 @@ app.delete("/api/orders/:id", authenticateToken, async (req: Request, res: Respo
   const id = Number(req.params.id);
   const index = memoryDb.orders.findIndex((o) => o.id === id);
 
-  if (index === -1) {
-    res.status(404).json({ error: "Order tidak ditemukan." });
-    return;
-  }
-
-  const deleted = memoryDb.orders.splice(index, 1)[0];
+  const deleted = index !== -1 ? memoryDb.orders.splice(index, 1)[0] : null;
   memoryDb.orderItems = memoryDb.orderItems.filter((i) => i.order_id !== id);
   try {
     await persistDeleteOrder(id);
@@ -1491,7 +1514,9 @@ app.delete("/api/orders/:id", authenticateToken, async (req: Request, res: Respo
     console.error("Gagal hapus order di Neon:", err);
   }
 
-  logActivity(currentUser.nama, "Hapus Order", `Menghapus nota ${deleted.nomor_nota}`);
+  if (deleted) {
+    logActivity(currentUser.nama, "Hapus Order", `Menghapus nota ${deleted.nomor_nota}`);
+  }
 
   res.json({ message: "Order berhasil dihapus" });
 });
@@ -1501,8 +1526,18 @@ app.delete("/api/orders/:id", authenticateToken, async (req: Request, res: Respo
 ======================================================== */
 
 // Get Vendors
-app.get("/api/vendors", authenticateToken, (req: Request, res: Response) => {
+app.get("/api/vendors", authenticateToken, async (req: Request, res: Response) => {
   const { search, kategori } = req.query;
+
+  try {
+    const vendors = await fetchVendorsFromNeon({
+      search: search as string,
+      kategori: kategori as string,
+    });
+    res.json({ vendors });
+    return;
+  } catch (e) {}
+
   let list = [...memoryDb.vendors];
 
   if (kategori && kategori !== "all") {
@@ -1521,7 +1556,7 @@ app.get("/api/vendors", authenticateToken, (req: Request, res: Response) => {
 
   // Calculate total spent per vendor
   const vendorsWithStats = list.map((vendor) => {
-    const purchases = memoryDb.purchaseHistory.filter((p) => p.vendor_id === vendor.id);
+    const purchases = (memoryDb.purchaseHistory || []).filter((p) => p.vendor_id === vendor.id);
     const totalSpent = purchases.reduce((sum, p) => sum + Number(p.total), 0);
     return {
       ...vendor,
@@ -1617,12 +1652,7 @@ app.delete("/api/vendors/:id", authenticateToken, async (req: Request, res: Resp
   const id = Number(req.params.id);
   const index = memoryDb.vendors.findIndex((v) => v.id === id);
 
-  if (index === -1) {
-    res.status(404).json({ error: "Vendor tidak ditemukan." });
-    return;
-  }
-
-  const deleted = memoryDb.vendors.splice(index, 1)[0];
+  const deleted = index !== -1 ? memoryDb.vendors.splice(index, 1)[0] : null;
   // Also clean up any product_vendors relations for this vendor
   if (memoryDb.product_vendors) {
     memoryDb.product_vendors = memoryDb.product_vendors.filter((pv) => pv.vendor_id !== id);
@@ -1633,7 +1663,10 @@ app.delete("/api/vendors/:id", authenticateToken, async (req: Request, res: Resp
   } catch (err) {
     console.error("Gagal hapus vendor di Neon:", err);
   }
-  logActivity(currentUser.nama, "Hapus Vendor", `Menghapus supplier ${deleted.nama_vendor}`);
+
+  if (deleted) {
+    logActivity(currentUser.nama, "Hapus Vendor", `Menghapus supplier ${deleted.nama_vendor}`);
+  }
   res.json({ message: "Vendor berhasil dihapus" });
 });
 
@@ -3262,23 +3295,20 @@ app.delete("/api/transactions/:id", authenticateToken, async (req: Request, res:
   const id = Number(req.params.id);
   const index = (memoryDb.transactions || []).findIndex((t) => t.id === id);
 
-  if (index === -1) {
-    res.status(404).json({ error: "Transaksi tidak ditemukan." });
-    return;
-  }
-
-  const deleted = memoryDb.transactions.splice(index, 1)[0];
+  const deleted = index !== -1 ? memoryDb.transactions.splice(index, 1)[0] : null;
   try {
     await persistDeleteTransaction(id);
   } catch (err) {
     console.error("Gagal hapus transaksi di Neon:", err);
   }
 
-  logActivity(
-    currentUser.nama,
-    "Hapus Transaksi",
-    `Menghapus catatan kas: [${deleted.tipe.toUpperCase()}] ${deleted.kategori} - Rp ${deleted.nominal.toLocaleString()}`
-  );
+  if (deleted) {
+    logActivity(
+      currentUser.nama,
+      "Hapus Transaksi",
+      `Menghapus catatan kas: [${deleted.tipe.toUpperCase()}] ${deleted.kategori} - Rp ${deleted.nominal.toLocaleString()}`
+    );
+  }
 
   res.json({ message: "Transaksi berhasil dihapus" });
 });
@@ -3671,7 +3701,15 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, async (req: Requ
    DASHBOARD & STATS ROUTES
 ======================================================== */
 
-app.get("/api/dashboard/stats", authenticateToken, (req: Request, res: Response) => {
+app.get("/api/dashboard/stats", authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const neonStats = await fetchDashboardStatsFromNeon();
+    if (neonStats) {
+      res.json(neonStats);
+      return;
+    }
+  } catch (e) {}
+
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();

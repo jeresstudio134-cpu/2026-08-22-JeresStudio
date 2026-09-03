@@ -101,7 +101,7 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
       CREATE TABLE IF NOT EXISTS order_items (
         id SERIAL PRIMARY KEY,
         order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-        product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+        product_id INTEGER,
         nama_item VARCHAR(150) NOT NULL,
         qty NUMERIC DEFAULT 1 NOT NULL,
         satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL,
@@ -115,6 +115,8 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
         hitung_dimensi BOOLEAN DEFAULT FALSE
       );
     `;
+    // Ensure legacy product_id foreign key constraint is dropped so custom line items won't violate FK
+    await sql`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_product_id_fkey`.catch(() => {});
 
     // 5. vendors
     await sql`
@@ -386,11 +388,125 @@ async function autoSeedIfEmpty(sql: any) {
       console.log("--> Seeding data vendor...");
       for (const v of memoryDb.vendors) {
         await sql`
-          INSERT INTO vendors (nama_vendor, kategori_supply, kontak, kontak_nama, no_wa, link, alamat, catatan, is_active, created_at, updated_at)
-          VALUES (${v.nama_vendor}, ${v.kategori_supply || 'Lainnya'}, ${v.kontak || ''}, ${v.kontak_nama || ''}, ${v.no_wa || ''}, ${v.link || ''}, ${v.alamat || ''}, ${v.catatan || ''}, ${v.is_active !== false}, ${new Date(v.created_at || Date.now())}, ${new Date(v.updated_at || Date.now())})
+          INSERT INTO vendors (id, nama_vendor, kategori_supply, kontak, kontak_nama, no_wa, link, alamat, catatan, is_active, created_at, updated_at)
+          VALUES (${v.id}, ${v.nama_vendor}, ${v.kategori_supply || 'Lainnya'}, ${v.kontak || ''}, ${v.kontak_nama || ''}, ${v.no_wa || ''}, ${v.link || ''}, ${v.alamat || ''}, ${v.catatan || ''}, ${v.is_active !== false}, ${new Date(v.created_at || Date.now())}, ${new Date(v.updated_at || Date.now())})
+          ON CONFLICT (id) DO NOTHING
         `;
       }
     }
+
+    // Check product_vendors
+    const pvCount = await sql`SELECT COUNT(*)::int as count FROM product_vendors`;
+    if (pvCount[0]?.count === 0 && Array.isArray(memoryDb.product_vendors) && memoryDb.product_vendors.length > 0) {
+      console.log("--> Seeding data hubungan produk vendor...");
+      for (const pv of memoryDb.product_vendors) {
+        await sql`
+          INSERT INTO product_vendors (id, product_id, vendor_id, harga_modal, is_default, catatan, created_at, updated_at)
+          VALUES (${pv.id}, ${pv.product_id}, ${pv.vendor_id}, ${pv.harga_modal}, ${pv.is_default || false}, ${pv.catatan || ''}, ${new Date(pv.created_at || Date.now())}, ${new Date(pv.updated_at || Date.now())})
+          ON CONFLICT (id) DO NOTHING
+        `;
+      }
+    }
+
+    // Check orders and order_items
+    const ordersCount = await sql`SELECT COUNT(*)::int as count FROM orders`;
+    if (ordersCount[0]?.count === 0 && Array.isArray(memoryDb.orders) && memoryDb.orders.length > 0) {
+      console.log("--> Seeding data awal pesanan & nota cetak...");
+      for (const o of memoryDb.orders) {
+        const progNotesStr = JSON.stringify(o.progress_notes || []);
+        const tglOrder = o.tanggal_order ? new Date(o.tanggal_order) : new Date();
+        const tglAmbil = o.tanggal_ambil ? new Date(o.tanggal_ambil) : null;
+        await sql`
+          INSERT INTO orders (
+            id, nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
+            metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
+            created_by, share_token, share_expires_at, progress_notes, created_at, updated_at
+          ) VALUES (
+            ${o.id}, ${o.nomor_nota}, ${o.nama_pelanggan}, ${o.no_wa}, 
+            ${tglOrder}, ${tglAmbil}, ${o.status || 'pending'}, 
+            ${o.metode_bayar || 'Cash'}, ${o.status_bayar || 'belum'}, ${o.jumlah_dp || 0}, 
+            ${o.catatan || ''}, ${o.subtotal || 0}, ${o.diskon || 0}, ${o.total || 0}, 
+            ${o.created_by || 'Admin'}, ${o.share_token || null}, null, 
+            ${progNotesStr}, ${new Date(o.created_at || Date.now())}, ${new Date(o.updated_at || Date.now())}
+          )
+          ON CONFLICT (id) DO NOTHING
+        `;
+
+        // Seed items for this order
+        const orderItems = (memoryDb.orderItems || []).filter((i: any) => i.order_id === o.id);
+        for (const item of orderItems) {
+          await sql`
+            INSERT INTO order_items (
+              id, order_id, product_id, nama_item, qty, satuan, harga_satuan, 
+              subtotal, catatan_item, panjang, lebar, dimensi_unit, jumlah_lembar, hitung_dimensi
+            ) VALUES (
+              ${item.id}, ${o.id}, ${item.product_id || null}, ${item.nama_item}, ${item.qty || 1}, 
+              ${item.satuan || 'pcs'}, ${item.harga_satuan || 0}, ${item.subtotal || 0}, 
+              ${item.catatan_item || ''}, ${item.panjang || null}, ${item.lebar || null}, 
+              ${item.dimensi_unit || 'm'}, ${item.jumlah_lembar || 1}, ${item.hitung_dimensi || false}
+            )
+            ON CONFLICT (id) DO NOTHING
+          `;
+        }
+      }
+    }
+
+    // Check transactions (5 Kantong Keuangan)
+    const txCount = await sql`SELECT COUNT(*)::int as count FROM transactions`;
+    if (txCount[0]?.count === 0 && Array.isArray(memoryDb.transactions) && memoryDb.transactions.length > 0) {
+      console.log("--> Seeding data awal transaksi kas (5 kantong)...");
+      for (const t of memoryDb.transactions) {
+        const itemsJson = t.items ? JSON.stringify(t.items) : null;
+        await sql`
+          INSERT INTO transactions (
+            id, tipe, kategori, kantong, nominal, tanggal, metode_pembayaran, keterangan, referensi, items, created_by, created_at, updated_at
+          ) VALUES (
+            ${t.id}, ${t.tipe}, ${t.kategori}, ${t.kantong || 'margin'}, ${Math.round(Number(t.nominal) || 0)}, 
+            ${new Date(t.tanggal || Date.now())}, ${t.metode_pembayaran || 'Cash'}, ${t.keterangan || ''}, 
+            ${t.referensi || null}, ${itemsJson}, ${t.created_by || 'admin'}, ${new Date(t.created_at || Date.now())}, ${new Date(t.updated_at || Date.now())}
+          )
+          ON CONFLICT (id) DO NOTHING
+        `;
+      }
+    }
+
+    // Check savings_targets
+    const stCount = await sql`SELECT COUNT(*)::int as count FROM savings_targets`;
+    if (stCount[0]?.count === 0 && Array.isArray(memoryDb.savingsTargets) && memoryDb.savingsTargets.length > 0) {
+      console.log("--> Seeding target tabungan & angsuran...");
+      for (const st of memoryDb.savingsTargets) {
+        await sql`
+          INSERT INTO savings_targets (
+            id, tipe, nama, target_nominal, terkumpul_nominal, sumber_kantong_default, jatuh_tempo, cicilan_per_bulan, catatan, status, created_at, updated_at
+          ) VALUES (
+            ${st.id}, ${st.tipe || 'tabungan'}, ${st.nama}, ${st.target_nominal || 0}, ${st.terkumpul_nominal || 0},
+            ${st.sumber_kantong_default || 'margin'}, ${st.jatuh_tempo || ''}, ${st.cicilan_per_bulan || 0},
+            ${st.catatan || ''}, ${st.status || 'aktif'}, ${new Date(st.created_at || Date.now())}, ${new Date(st.updated_at || Date.now())}
+          )
+          ON CONFLICT (id) DO NOTHING
+        `;
+      }
+    }
+
+    // Check purchase_history
+    const phCount = await sql`SELECT COUNT(*)::int as count FROM purchase_history`;
+    if (phCount[0]?.count === 0 && Array.isArray(memoryDb.purchaseHistory) && memoryDb.purchaseHistory.length > 0) {
+      console.log("--> Seeding riwayat pembelian kulakan...");
+      for (const ph of memoryDb.purchaseHistory) {
+        await sql`
+          INSERT INTO purchase_history (
+            id, vendor_id, tanggal, nama_barang, qty, satuan, harga_satuan, total, catatan, created_at
+          ) VALUES (
+            ${ph.id}, ${ph.vendor_id}, ${new Date(ph.tanggal || Date.now())}, ${ph.nama_barang}, ${ph.qty || 1}, 
+            ${ph.satuan || 'pcs'}, ${ph.harga_satuan || 0}, ${ph.total || 0}, ${ph.catatan || ''}, ${new Date(ph.created_at || Date.now())}
+          )
+          ON CONFLICT (id) DO NOTHING
+        `;
+      }
+    }
+
+    // Repair PostgreSQL serial sequence pointers
+    await repairPostgresSequences(sql);
 
     console.log("✓ Verifikasi & seeding awal selesai.");
   } catch (err) {
@@ -727,50 +843,67 @@ export async function persistOrder(order: any, items: any[]) {
     const tanggalAmbil = order.tanggal_ambil ? new Date(order.tanggal_ambil) : null;
     const shareExpires = order.share_expires_at ? new Date(order.share_expires_at) : null;
 
-    if (order.id && typeof order.id === "number") {
-      await sql`
-        INSERT INTO orders (
-          id, nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
-          metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
-          created_by, share_token, share_expires_at, progress_notes, updated_at
-        ) VALUES (
-          ${order.id}, ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
-          ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
-          ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${order.jumlah_dp || 0}, 
-          ${order.catatan || ''}, ${order.subtotal || 0}, ${order.diskon || 0}, ${order.total || 0}, 
-          ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
-          ${progNotesStr}, ${new Date()}
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          nama_pelanggan = EXCLUDED.nama_pelanggan,
-          no_wa = EXCLUDED.no_wa,
-          tanggal_ambil = EXCLUDED.tanggal_ambil,
-          status = EXCLUDED.status,
-          metode_bayar = EXCLUDED.metode_bayar,
-          status_bayar = EXCLUDED.status_bayar,
-          jumlah_dp = EXCLUDED.jumlah_dp,
-          catatan = EXCLUDED.catatan,
-          subtotal = EXCLUDED.subtotal,
-          diskon = EXCLUDED.diskon,
-          total = EXCLUDED.total,
-          share_token = EXCLUDED.share_token,
-          share_expires_at = EXCLUDED.share_expires_at,
-          progress_notes = EXCLUDED.progress_notes,
-          updated_at = NOW();
-      `;
+    let targetId = order.id && typeof order.id === "number" ? order.id : null;
+    if (!targetId && order.nomor_nota) {
+      const existing = await sql`SELECT id FROM orders WHERE nomor_nota = ${order.nomor_nota} LIMIT 1`;
+      if (existing.length > 0) targetId = existing[0].id;
+    }
+
+    if (targetId) {
+      const existing = await sql`SELECT id FROM orders WHERE id = ${targetId} LIMIT 1`;
+      if (existing.length > 0) {
+        order.id = targetId;
+        await sql`
+          UPDATE orders SET
+            nomor_nota = ${order.nomor_nota},
+            nama_pelanggan = ${order.nama_pelanggan},
+            no_wa = ${order.no_wa},
+            tanggal_ambil = ${tanggalAmbil},
+            status = ${order.status || 'pending'},
+            metode_bayar = ${order.metode_bayar || 'Cash'},
+            status_bayar = ${order.status_bayar || 'belum'},
+            jumlah_dp = ${Math.round(Number(order.jumlah_dp) || 0)},
+            catatan = ${order.catatan || ''},
+            subtotal = ${Math.round(Number(order.subtotal) || 0)},
+            diskon = ${Math.round(Number(order.diskon) || 0)},
+            total = ${Math.round(Number(order.total) || 0)},
+            share_token = ${order.share_token || null},
+            share_expires_at = ${shareExpires},
+            progress_notes = ${progNotesStr},
+            updated_at = NOW()
+          WHERE id = ${targetId};
+        `;
+      } else {
+        const res = await sql`
+          INSERT INTO orders (
+            id, nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
+            metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
+            created_by, share_token, share_expires_at, progress_notes, created_at, updated_at
+          ) VALUES (
+            ${targetId}, ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
+            ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
+            ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${Math.round(Number(order.jumlah_dp) || 0)}, 
+            ${order.catatan || ''}, ${Math.round(Number(order.subtotal) || 0)}, ${Math.round(Number(order.diskon) || 0)}, ${Math.round(Number(order.total) || 0)}, 
+            ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
+            ${progNotesStr}, ${new Date(order.created_at || Date.now())}, ${new Date()}
+          )
+          RETURNING *;
+        `;
+        if (res && res[0]) order.id = res[0].id;
+      }
     } else {
       const res = await sql`
         INSERT INTO orders (
           nomor_nota, nama_pelanggan, no_wa, tanggal_order, tanggal_ambil, status, 
           metode_bayar, status_bayar, jumlah_dp, catatan, subtotal, diskon, total, 
-          created_by, share_token, share_expires_at, progress_notes, updated_at
+          created_by, share_token, share_expires_at, progress_notes, created_at, updated_at
         ) VALUES (
           ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
           ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
-          ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${order.jumlah_dp || 0}, 
-          ${order.catatan || ''}, ${order.subtotal || 0}, ${order.diskon || 0}, ${order.total || 0}, 
+          ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${Math.round(Number(order.jumlah_dp) || 0)}, 
+          ${order.catatan || ''}, ${Math.round(Number(order.subtotal) || 0)}, ${Math.round(Number(order.diskon) || 0)}, ${Math.round(Number(order.total) || 0)}, 
           ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
-          ${progNotesStr}, ${new Date()}
+          ${progNotesStr}, ${new Date(order.created_at || Date.now())}, ${new Date()}
         )
         RETURNING *;
       `;
@@ -780,7 +913,7 @@ export async function persistOrder(order: any, items: any[]) {
     }
 
     // Persist items if provided
-    if (items && items.length > 0) {
+    if (items && Array.isArray(items)) {
       await sql`DELETE FROM order_items WHERE order_id = ${order.id}`;
       for (const item of items) {
         await sql`
@@ -788,10 +921,10 @@ export async function persistOrder(order: any, items: any[]) {
             order_id, product_id, nama_item, qty, satuan, harga_satuan, 
             subtotal, catatan_item, panjang, lebar, dimensi_unit, jumlah_lembar, hitung_dimensi
           ) VALUES (
-            ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${item.qty || 1}, 
-            ${item.satuan || 'pcs'}, ${item.harga_satuan || 0}, ${item.subtotal || 0}, 
-            ${item.catatan_item || ''}, ${item.panjang || null}, ${item.lebar || null}, 
-            ${item.dimensi_unit || 'm'}, ${item.jumlah_lembar || 1}, ${item.hitung_dimensi || false}
+            ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${Number(item.qty) || 1}, 
+            ${item.satuan || 'pcs'}, ${Math.round(Number(item.harga_satuan) || 0)}, ${Math.round(Number(item.subtotal) || 0)}, 
+            ${item.catatan_item || ''}, ${item.panjang ? Number(item.panjang) : null}, ${item.lebar ? Number(item.lebar) : null}, 
+            ${item.dimensi_unit || 'm'}, ${item.jumlah_lembar ? Number(item.jumlah_lembar) : 1}, ${Boolean(item.hitung_dimensi)}
           );
         `;
       }
@@ -1293,5 +1426,552 @@ export async function persistDeleteSavingsTarget(id: number) {
     console.error("Error deleting savings target from Neon:", e);
     throw e;
   }
+}
+
+// 6. Direct Neon Query Readers (Ensures Vercel serverless consistency across all lambdas)
+
+export async function fetchOrdersFromNeon(filters?: {
+  status?: string;
+  status_bayar?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const sql = getNeonSql();
+  if (!sql) {
+    let list = [...memoryDb.orders];
+    if (filters?.status && filters.status !== "all") list = list.filter((o) => o.status === filters.status);
+    if (filters?.status_bayar && filters.status_bayar !== "all") list = list.filter((o) => o.status_bayar === filters.status_bayar);
+    if (filters?.startDate) list = list.filter((o) => new Date(o.tanggal_order) >= new Date(filters.startDate!));
+    if (filters?.endDate) {
+      const end = new Date(filters.endDate);
+      end.setHours(23, 59, 59, 999);
+      list = list.filter((o) => new Date(o.tanggal_order) <= end);
+    }
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter((o) => o.nomor_nota.toLowerCase().includes(q) || o.nama_pelanggan.toLowerCase().includes(q) || o.no_wa.includes(q));
+    }
+    return list.map((o) => ({ ...o, items: memoryDb.orderItems.filter((i) => i.order_id === o.id) }));
+  }
+
+  const orders = await sql`SELECT * FROM orders ORDER BY created_at DESC, id DESC`;
+  const items = await sql`SELECT * FROM order_items ORDER BY id ASC`;
+
+  const itemsByOrder: Record<number, any[]> = {};
+  for (const it of items) {
+    const formatted = {
+      id: it.id,
+      order_id: it.order_id,
+      product_id: it.product_id,
+      nama_item: it.nama_item,
+      qty: Number(it.qty),
+      satuan: it.satuan || 'pcs',
+      harga_satuan: Number(it.harga_satuan),
+      subtotal: Number(it.subtotal),
+      catatan_item: it.catatan_item || '',
+      panjang: it.panjang !== null ? Number(it.panjang) : null,
+      lebar: it.lebar !== null ? Number(it.lebar) : null,
+      dimensi_unit: it.dimensi_unit || 'm',
+      jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
+      hitung_dimensi: Boolean(it.hitung_dimensi),
+    };
+    if (!itemsByOrder[it.order_id]) itemsByOrder[it.order_id] = [];
+    itemsByOrder[it.order_id].push(formatted);
+  }
+
+  const formattedOrders = orders.map((o: any) => {
+    let progNotes = [];
+    try {
+      progNotes = typeof o.progress_notes === 'string' ? JSON.parse(o.progress_notes) : (o.progress_notes || []);
+    } catch {
+      progNotes = [];
+    }
+    return {
+      id: o.id,
+      nomor_nota: o.nomor_nota,
+      nama_pelanggan: o.nama_pelanggan,
+      no_wa: o.no_wa,
+      tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
+      tanggal_ambil: o.tanggal_ambil ? new Date(o.tanggal_ambil).toISOString() : "",
+      status: o.status,
+      metode_bayar: o.metode_bayar,
+      status_bayar: o.status_bayar,
+      jumlah_dp: Number(o.jumlah_dp || 0),
+      catatan: o.catatan || "",
+      subtotal: Number(o.subtotal || 0),
+      diskon: Number(o.diskon || 0),
+      total: Number(o.total || 0),
+      created_by: o.created_by || "Admin",
+      share_token: o.share_token || null,
+      share_expires_at: o.share_expires_at ? new Date(o.share_expires_at).toISOString() : null,
+      progress_notes: progNotes,
+      created_at: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
+      updated_at: o.updated_at ? new Date(o.updated_at).toISOString() : new Date().toISOString(),
+      items: itemsByOrder[o.id] || [],
+    };
+  });
+
+  // Sync memory cache
+  memoryDb.orders = formattedOrders.map(({ items, ...rest }) => rest);
+  memoryDb.orderItems = items.map((it: any) => ({
+    id: it.id,
+    order_id: it.order_id,
+    product_id: it.product_id,
+    nama_item: it.nama_item,
+    qty: Number(it.qty),
+    satuan: it.satuan || 'pcs',
+    harga_satuan: Number(it.harga_satuan),
+    subtotal: Number(it.subtotal),
+    catatan_item: it.catatan_item || '',
+    panjang: it.panjang !== null ? Number(it.panjang) : null,
+    lebar: it.lebar !== null ? Number(it.lebar) : null,
+    dimensi_unit: it.dimensi_unit || 'm',
+    jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
+    hitung_dimensi: Boolean(it.hitung_dimensi),
+  }));
+
+  let results = formattedOrders;
+  if (filters?.status && filters.status !== "all") results = results.filter((o) => o.status === filters.status);
+  if (filters?.status_bayar && filters.status_bayar !== "all") results = results.filter((o) => o.status_bayar === filters.status_bayar);
+  if (filters?.startDate) results = results.filter((o) => new Date(o.tanggal_order) >= new Date(filters.startDate!));
+  if (filters?.endDate) {
+    const end = new Date(filters.endDate);
+    end.setHours(23, 59, 59, 999);
+    results = results.filter((o) => new Date(o.tanggal_order) <= end);
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    results = results.filter(
+      (o) =>
+        o.nomor_nota.toLowerCase().includes(q) ||
+        o.nama_pelanggan.toLowerCase().includes(q) ||
+        o.no_wa.includes(q)
+    );
+  }
+
+  return results;
+}
+
+export async function fetchSingleOrderFromNeon(idOrNota: string | number) {
+  const sql = getNeonSql();
+  if (!sql) {
+    const id = Number(idOrNota);
+    const order = memoryDb.orders.find((o) => o.id === id || o.nomor_nota === String(idOrNota));
+    if (!order) return null;
+    return {
+      ...order,
+      items: memoryDb.orderItems.filter((i) => i.order_id === order.id),
+    };
+  }
+
+  let rows;
+  if (!isNaN(Number(idOrNota))) {
+    rows = await sql`SELECT * FROM orders WHERE id = ${Number(idOrNota)} OR nomor_nota = ${String(idOrNota)} LIMIT 1`;
+  } else {
+    rows = await sql`SELECT * FROM orders WHERE nomor_nota = ${String(idOrNota)} LIMIT 1`;
+  }
+
+  if (rows.length === 0) return null;
+  const o = rows[0];
+  const items = await sql`SELECT * FROM order_items WHERE order_id = ${o.id} ORDER BY id ASC`;
+  
+  let progNotes = [];
+  try {
+    progNotes = typeof o.progress_notes === 'string' ? JSON.parse(o.progress_notes) : (o.progress_notes || []);
+  } catch {
+    progNotes = [];
+  }
+
+  return {
+    id: o.id,
+    nomor_nota: o.nomor_nota,
+    nama_pelanggan: o.nama_pelanggan,
+    no_wa: o.no_wa,
+    tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
+    tanggal_ambil: o.tanggal_ambil ? new Date(o.tanggal_ambil).toISOString() : "",
+    status: o.status,
+    metode_bayar: o.metode_bayar,
+    status_bayar: o.status_bayar,
+    jumlah_dp: Number(o.jumlah_dp || 0),
+    catatan: o.catatan || "",
+    subtotal: Number(o.subtotal || 0),
+    diskon: Number(o.diskon || 0),
+    total: Number(o.total || 0),
+    created_by: o.created_by || "Admin",
+    share_token: o.share_token || null,
+    share_expires_at: o.share_expires_at ? new Date(o.share_expires_at).toISOString() : null,
+    progress_notes: progNotes,
+    created_at: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
+    updated_at: o.updated_at ? new Date(o.updated_at).toISOString() : new Date().toISOString(),
+    items: items.map((it: any) => ({
+      id: it.id,
+      order_id: it.order_id,
+      product_id: it.product_id,
+      nama_item: it.nama_item,
+      qty: Number(it.qty),
+      satuan: it.satuan || 'pcs',
+      harga_satuan: Number(it.harga_satuan),
+      subtotal: Number(it.subtotal),
+      catatan_item: it.catatan_item || '',
+      panjang: it.panjang !== null ? Number(it.panjang) : null,
+      lebar: it.lebar !== null ? Number(it.lebar) : null,
+      dimensi_unit: it.dimensi_unit || 'm',
+      jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
+      hitung_dimensi: Boolean(it.hitung_dimensi),
+    })),
+  };
+}
+
+export async function fetchProductsFromNeon(filters?: {
+  kategori?: string;
+  search?: string;
+  activeOnly?: boolean;
+}) {
+  const sql = getNeonSql();
+  if (!sql) return memoryDb.products;
+
+  const rows = await sql`SELECT * FROM products ORDER BY id ASC`;
+  const formatted = rows.map((p: any) => {
+    let images: string[] = [];
+    try {
+      images = typeof p.images === 'string' ? JSON.parse(p.images) : (p.images || []);
+    } catch {
+      images = p.gambar_url ? [p.gambar_url] : [];
+    }
+    return {
+      id: p.id,
+      kategori: p.kategori,
+      nama_item: p.nama_item,
+      deskripsi: p.deskripsi || "",
+      satuan: p.satuan || "pcs",
+      harga: Number(p.harga),
+      harga_minimum_qty: Number(p.harga_minimum_qty || 1),
+      gambar_url: p.gambar_url || (images.length > 0 ? images[0] : ""),
+      images: Array.isArray(images) ? images : [],
+      is_active: Boolean(p.is_active),
+      tampilkan_harga_publik: p.tampilkan_harga_publik !== false,
+      created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+      updated_at: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
+    };
+  });
+
+  memoryDb.products = formatted;
+
+  let results = formatted;
+  if (filters?.activeOnly) {
+    results = results.filter((p) => p.is_active);
+  }
+  if (filters?.kategori && filters.kategori !== "all") {
+    results = results.filter((p) => p.kategori.toLowerCase() === filters.kategori!.toLowerCase());
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    results = results.filter(
+      (p) =>
+        p.nama_item.toLowerCase().includes(q) ||
+        p.deskripsi.toLowerCase().includes(q) ||
+        p.kategori.toLowerCase().includes(q)
+    );
+  }
+  return results;
+}
+
+export async function fetchVendorsFromNeon(filters?: { search?: string; kategori?: string }) {
+  const sql = getNeonSql();
+  if (!sql) return memoryDb.vendors;
+
+  const vendors = await sql`SELECT * FROM vendors ORDER BY id ASC`;
+  let purchases: any[] = [];
+  try {
+    purchases = await sql`SELECT vendor_id, total FROM purchase_history`;
+  } catch {}
+
+  const totalSpentByVendor: Record<number, number> = {};
+  const purchaseCountByVendor: Record<number, number> = {};
+
+  for (const pur of purchases) {
+    const vId = pur.vendor_id;
+    totalSpentByVendor[vId] = (totalSpentByVendor[vId] || 0) + Number(pur.total || 0);
+    purchaseCountByVendor[vId] = (purchaseCountByVendor[vId] || 0) + 1;
+  }
+
+  const formatted = vendors.map((v: any) => ({
+    id: v.id,
+    nama_vendor: v.nama_vendor,
+    kategori_supply: v.kategori_supply || "Lainnya",
+    kontak: v.kontak || "",
+    kontak_nama: v.kontak_nama || "",
+    no_wa: v.no_wa || "",
+    link: v.link || "",
+    alamat: v.alamat || "",
+    catatan: v.catatan || "",
+    is_active: v.is_active !== false,
+    created_at: v.created_at ? new Date(v.created_at).toISOString() : new Date().toISOString(),
+    updated_at: v.updated_at ? new Date(v.updated_at).toISOString() : new Date().toISOString(),
+    totalSpent: totalSpentByVendor[v.id] || 0,
+    totalPurchases: purchaseCountByVendor[v.id] || 0,
+  }));
+
+  memoryDb.vendors = formatted;
+
+  let results = formatted;
+  if (filters?.kategori && filters.kategori !== "all") {
+    results = results.filter((v) => v.kategori_supply.toLowerCase() === filters.kategori!.toLowerCase());
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    results = results.filter(
+      (v) =>
+        v.nama_vendor.toLowerCase().includes(q) ||
+        v.kontak_nama.toLowerCase().includes(q) ||
+        v.no_wa.includes(q) ||
+        v.catatan.toLowerCase().includes(q)
+    );
+  }
+  return results;
+}
+
+export async function fetchTransactionsFromNeon(filters?: {
+  startDate?: string;
+  endDate?: string;
+  kantong?: string;
+  tipe?: string;
+}) {
+  const sql = getNeonSql();
+  if (!sql) return memoryDb.transactions || [];
+
+  const rows = await sql`SELECT * FROM transactions ORDER BY tanggal DESC, id DESC`;
+  const formatted = rows.map((t: any) => {
+    let items = undefined;
+    if (t.items) {
+      try {
+        items = typeof t.items === 'string' ? JSON.parse(t.items) : t.items;
+      } catch {
+        items = undefined;
+      }
+    }
+    return {
+      id: t.id,
+      tipe: t.tipe as "masuk" | "keluar",
+      kategori: t.kategori,
+      kantong: t.kantong || "margin",
+      nominal: Number(t.nominal),
+      tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : new Date().toISOString(),
+      metode_pembayaran: t.metode_pembayaran || "Cash",
+      keterangan: t.keterangan || "",
+      referensi: t.referensi || null,
+      items,
+      created_by: t.created_by || "admin",
+      created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+      updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+    };
+  });
+
+  memoryDb.transactions = formatted;
+
+  let results = formatted;
+  if (filters?.startDate) {
+    results = results.filter((t) => new Date(t.tanggal) >= new Date(filters.startDate!));
+  }
+  if (filters?.endDate) {
+    const end = new Date(filters.endDate);
+    end.setHours(23, 59, 59, 999);
+    results = results.filter((t) => new Date(t.tanggal) <= end);
+  }
+  if (filters?.kantong && filters.kantong !== "all") {
+    results = results.filter((t) => t.kantong === filters.kantong);
+  }
+  if (filters?.tipe && filters.tipe !== "all") {
+    results = results.filter((t) => t.tipe === filters.tipe);
+  }
+  return results;
+}
+
+export async function fetchSavingsTargetsFromNeon() {
+  const sql = getNeonSql();
+  if (!sql) return memoryDb.savingsTargets || [];
+
+  const rows = await sql`SELECT * FROM savings_targets ORDER BY id ASC`;
+  const formatted = rows.map((s: any) => ({
+    id: s.id,
+    tipe: s.tipe || "tabungan",
+    nama: s.nama,
+    target_nominal: Number(s.target_nominal || 0),
+    terkumpul_nominal: Number(s.terkumpul_nominal || 0),
+    sumber_kantong_default: s.sumber_kantong_default || "margin",
+    jatuh_tempo: s.jatuh_tempo || "",
+    cicilan_per_bulan: Number(s.cicilan_per_bulan || 0),
+    catatan: s.catatan || "",
+    status: s.status || "aktif",
+    created_at: s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
+    updated_at: s.updated_at ? new Date(s.updated_at).toISOString() : new Date().toISOString(),
+  }));
+
+  memoryDb.savingsTargets = formatted;
+  return formatted;
+}
+
+export async function fetchPurchasesFromNeon(vendorId?: number) {
+  const sql = getNeonSql();
+  if (!sql) return memoryDb.purchaseHistory || [];
+
+  const rows = await sql`
+    SELECT ph.*, v.nama_vendor 
+    FROM purchase_history ph 
+    LEFT JOIN vendors v ON ph.vendor_id = v.id 
+    ORDER BY ph.tanggal DESC, ph.id DESC
+  `;
+  const formatted = rows.map((p: any) => ({
+    id: p.id,
+    vendor_id: p.vendor_id,
+    vendor_nama: p.nama_vendor || "Vendor Tidak Dikenal",
+    tanggal: p.tanggal ? new Date(p.tanggal).toISOString() : new Date().toISOString(),
+    nama_barang: p.nama_barang,
+    qty: Number(p.qty || 1),
+    satuan: p.satuan || "pcs",
+    harga_satuan: Number(p.harga_satuan || 0),
+    total: Number(p.total || 0),
+    catatan: p.catatan || "",
+    created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+  }));
+
+  memoryDb.purchaseHistory = formatted;
+
+  if (vendorId) {
+    return formatted.filter((p) => p.vendor_id === vendorId);
+  }
+  return formatted;
+}
+
+export async function fetchGuidesFromNeon(category?: string) {
+  const sql = getNeonSql();
+  if (!sql) {
+    const list = category && category !== "all" 
+      ? memoryDb.guides.filter((g) => g.category === category)
+      : memoryDb.guides;
+    const cats = Array.from(new Set(memoryDb.guides.map((g) => g.category)));
+    return { guides: list, categories: cats };
+  }
+
+  const rows = await sql`SELECT * FROM guides ORDER BY id ASC`;
+  const formatted = rows.map((g: any) => ({
+    id: g.id,
+    category: g.category || "Template Chat",
+    title: g.title,
+    content: g.content,
+    created_at: g.created_at ? new Date(g.created_at).toISOString() : new Date().toISOString(),
+    updated_at: g.updated_at ? new Date(g.updated_at).toISOString() : new Date().toISOString(),
+  }));
+
+  memoryDb.guides = formatted;
+  const cats = Array.from(new Set(formatted.map((g) => g.category)));
+  const list = category && category !== "all" ? formatted.filter((g) => g.category === category) : formatted;
+  return { guides: list, categories: cats };
+}
+
+export async function fetchDashboardStatsFromNeon() {
+  const sql = getNeonSql();
+  if (!sql) return null;
+
+  const orders = await sql`SELECT * FROM orders ORDER BY id DESC`;
+  const items = await sql`SELECT * FROM order_items`;
+  const products = await sql`SELECT id, kategori FROM products`;
+
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const thisMonthOrders = orders.filter((o: any) => {
+    const d = new Date(o.tanggal_order);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  const totalOmzetBulanIni = thisMonthOrders.reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
+  const totalOrderBulanIni = thisMonthOrders.length;
+  const orderPending = orders.filter((o: any) => o.status === "pending").length;
+  const orderProses = orders.filter((o: any) => o.status === "proses").length;
+  const orderSelesai = orders.filter((o: any) => o.status === "selesai").length;
+
+  const next48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const deadlineApproachingOrders = orders.filter((o: any) => {
+    if (o.status === "selesai" || o.status === "dibatalkan" || !o.tanggal_ambil) return false;
+    const deadline = new Date(o.tanggal_ambil);
+    return deadline <= next48h;
+  });
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  const revenueTrend = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(currentYear, currentMonth - i, 1);
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    const label = `${monthNames[m]} ${y}`;
+
+    const monthOrders = orders.filter((o: any) => {
+      const od = new Date(o.tanggal_order);
+      return od.getMonth() === m && od.getFullYear() === y && o.status !== "dibatalkan";
+    });
+
+    const omzet = monthOrders.reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
+    const orderCount = monthOrders.length;
+    revenueTrend.push({ bulan: label, omzet, orderCount });
+  }
+
+  const prodCatMap: Record<number, string> = {};
+  for (const p of products) {
+    prodCatMap[p.id] = p.kategori;
+  }
+
+  const categoryCount: Record<string, number> = {
+    stiker: 0,
+    dtf: 0,
+    banner: 0,
+    jersey: 0,
+    desain: 0,
+    lainnya: 0,
+  };
+
+  for (const it of items) {
+    const cat = (it.product_id && prodCatMap[it.product_id]) ? prodCatMap[it.product_id].toLowerCase() : "lainnya";
+    categoryCount[cat] = (categoryCount[cat] || 0) + Number(it.qty || 1);
+  }
+
+  const categoryDistribution = Object.keys(categoryCount).map((k) => ({
+    name: k.toUpperCase(),
+    value: categoryCount[k],
+  }));
+
+  const recentOrders = orders.slice(0, 5).map((o: any) => ({
+    id: o.id,
+    nomor_nota: o.nomor_nota,
+    nama_pelanggan: o.nama_pelanggan,
+    status: o.status,
+    status_bayar: o.status_bayar,
+    total: Number(o.total || 0),
+    tanggal_order: o.tanggal_order ? new Date(o.tanggal_order).toISOString() : new Date().toISOString(),
+  }));
+
+  return {
+    totalOmzetBulanIni,
+    totalOrderBulanIni,
+    orderPending,
+    orderProses,
+    orderSelesai,
+    deadlineApproachingCount: deadlineApproachingOrders.length,
+    deadlineApproachingOrders,
+    revenueTrend,
+    categoryDistribution,
+    recentOrders,
+  };
+}
+
+export async function forceFullSync() {
+  const initRes = await initNeonTables();
+  const status = await getDatabaseStatus();
+  return {
+    ...initRes,
+    status,
+  };
 }
 
