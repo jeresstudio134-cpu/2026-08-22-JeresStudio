@@ -133,7 +133,23 @@ export const transactions = pgTable("transactions", {
   metode_pembayaran: varchar("metode_pembayaran", { length: 50 }).default("Cash").notNull(),
   keterangan: text("keterangan").notNull(),
   referensi: varchar("referensi", { length: 100 }),
+  items: text("items"),
   created_by: varchar("created_by", { length: 100 }).default("admin"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const savingsTargets = pgTable("savings_targets", {
+  id: serial("id").primaryKey(),
+  tipe: varchar("tipe", { length: 20 }).default("tabungan").notNull(),
+  nama: varchar("nama", { length: 150 }).notNull(),
+  target_nominal: numeric("target_nominal").notNull(),
+  terkumpul_nominal: numeric("terkumpul_nominal").default("0").notNull(),
+  sumber_kantong_default: varchar("sumber_kantong_default", { length: 50 }).default("margin").notNull(),
+  jatuh_tempo: varchar("jatuh_tempo", { length: 50 }),
+  cicilan_per_bulan: numeric("cicilan_per_bulan").default("0"),
+  catatan: text("catatan"),
+  status: varchar("status", { length: 20 }).default("aktif").notNull(),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

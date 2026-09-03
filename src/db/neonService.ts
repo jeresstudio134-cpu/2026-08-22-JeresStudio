@@ -272,10 +272,19 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
     // Auto repair postgres ID sequences to prevent collision with existing records
     await repairPostgresSequences(sql);
 
+    // Query actual tables currently present in database
+    const finalTables = await sql`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name ASC
+    `;
+    const realCount = finalTables.length;
+
     return {
       success: true,
-      message: "Tabel dan skema Neon PostgreSQL berhasil diinisialisasi & disinkronkan dengan data database Neon.",
-      tableCount: 13,
+      message: `Tabel dan skema Neon PostgreSQL berhasil diverifikasi (${realCount} tabel terdeteksi di Neon).`,
+      tableCount: realCount,
     };
   } catch (err: any) {
     console.error("Gagal menginisialisasi tabel di Neon:", err);
@@ -302,6 +311,7 @@ export async function repairPostgresSequences(sql: any) {
     "guides",
     "categories",
     "transactions",
+    "savings_targets",
   ];
   for (const tbl of tables) {
     try {
@@ -516,6 +526,7 @@ async function autoSeedIfEmpty(sql: any) {
 
 // 3. Sync from Neon directly into memoryDb Cache with bidirectional recovery
 export async function syncFromNeonToMemory(sql: any) {
+  // 1. admin_users
   try {
     const users = await sql`SELECT * FROM admin_users ORDER BY id ASC`;
     if (users.length > 0) {
@@ -524,7 +535,12 @@ export async function syncFromNeonToMemory(sql: any) {
         created_at: u.created_at ? new Date(u.created_at).toISOString() : new Date().toISOString(),
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi admin_users: tabel belum ada atau kosong (" + (e.message || String(e)) + ")");
+  }
 
+  // 2. products
+  try {
     const prods = await sql`SELECT * FROM products ORDER BY id ASC`;
     if (prods.length > 0) {
       memoryDb.products = prods.map((p: any) => {
@@ -542,7 +558,12 @@ export async function syncFromNeonToMemory(sql: any) {
         };
       });
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi products:", e.message || String(e));
+  }
 
+  // 3. orders
+  try {
     const ords = await sql`SELECT * FROM orders ORDER BY id DESC`;
     if (ords.length > 0) {
       memoryDb.orders = ords.map((o: any) => {
@@ -563,7 +584,12 @@ export async function syncFromNeonToMemory(sql: any) {
         };
       });
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi orders:", e.message || String(e));
+  }
 
+  // 4. order_items
+  try {
     const items = await sql`SELECT * FROM order_items ORDER BY id ASC`;
     if (items.length > 0) {
       memoryDb.orderItems = items.map((i: any) => ({
@@ -575,7 +601,12 @@ export async function syncFromNeonToMemory(sql: any) {
         lebar: i.lebar !== null ? Number(i.lebar) : null,
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi order_items:", e.message || String(e));
+  }
 
+  // 5. store_settings
+  try {
     const st = await sql`SELECT * FROM store_settings WHERE id = 1 LIMIT 1`;
     if (st.length > 0) {
       memoryDb.storeSettings = {
@@ -583,7 +614,12 @@ export async function syncFromNeonToMemory(sql: any) {
         updated_at: st[0].updated_at ? new Date(st[0].updated_at).toISOString() : new Date().toISOString(),
       };
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi store_settings:", e.message || String(e));
+  }
 
+  // 6. vendors
+  try {
     const vens = await sql`SELECT * FROM vendors ORDER BY id ASC`;
     if (vens.length > 0) {
       memoryDb.vendors = vens.map((v: any) => ({
@@ -592,7 +628,12 @@ export async function syncFromNeonToMemory(sql: any) {
         updated_at: v.updated_at ? new Date(v.updated_at).toISOString() : new Date().toISOString(),
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi vendors:", e.message || String(e));
+  }
 
+  // 7. product_vendors
+  try {
     const pvs = await sql`SELECT * FROM product_vendors ORDER BY id ASC`;
     if (pvs.length > 0) {
       memoryDb.product_vendors = pvs.map((pv: any) => ({
@@ -601,8 +642,12 @@ export async function syncFromNeonToMemory(sql: any) {
         updated_at: pv.updated_at ? new Date(pv.updated_at).toISOString() : new Date().toISOString(),
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi product_vendors:", e.message || String(e));
+  }
 
-    // Bidirectional sync for transactions
+  // 8. transactions (Bidirectional sync for transactions & 5 Kantong Kas)
+  try {
     const txs = await sql`SELECT * FROM transactions ORDER BY id DESC`;
     if (txs.length > 0) {
       const dbTxIds = new Set(txs.map((t: any) => t.id));
@@ -651,7 +696,12 @@ export async function syncFromNeonToMemory(sql: any) {
         }));
       }
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi transactions:", e.message || String(e));
+  }
 
+  // 9. categories
+  try {
     const cats = await sql`SELECT * FROM categories ORDER BY id ASC`;
     if (cats.length > 0) {
       memoryDb.categories = cats.map((c: any) => ({
@@ -659,7 +709,12 @@ export async function syncFromNeonToMemory(sql: any) {
         created_at: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi categories:", e.message || String(e));
+  }
 
+  // 10. guides
+  try {
     const gds = await sql`SELECT * FROM guides ORDER BY id ASC`;
     if (gds.length > 0) {
       memoryDb.guides = gds.map((g: any) => ({
@@ -668,7 +723,12 @@ export async function syncFromNeonToMemory(sql: any) {
         updated_at: g.updated_at ? new Date(g.updated_at).toISOString() : new Date().toISOString(),
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi guides:", e.message || String(e));
+  }
 
+  // 11. purchase_history
+  try {
     const purchases = await sql`SELECT * FROM purchase_history ORDER BY id DESC`;
     if (purchases.length > 0) {
       memoryDb.purchaseHistory = purchases.map((p: any) => ({
@@ -680,7 +740,12 @@ export async function syncFromNeonToMemory(sql: any) {
         created_at: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
       }));
     }
+  } catch (e: any) {
+    console.warn("Sinkronisasi purchase_history:", e.message || String(e));
+  }
 
+  // 12. savings_targets
+  try {
     const targets = await sql`SELECT * FROM savings_targets ORDER BY id ASC`;
     if (targets.length > 0) {
       memoryDb.savingsTargets = targets.map((st: any) => ({
@@ -692,11 +757,24 @@ export async function syncFromNeonToMemory(sql: any) {
         updated_at: st.updated_at ? new Date(st.updated_at).toISOString() : new Date().toISOString(),
       }));
     }
-
-    console.log("✓ Data dari database Neon PostgreSQL berhasil disinkronkan secara presisi ke memori server.");
-  } catch (err) {
-    console.error("Gagal sinkronisasi data dari Neon:", err);
+  } catch (e: any) {
+    console.warn("Sinkronisasi savings_targets:", e.message || String(e));
   }
+
+  // 13. activity_logs
+  try {
+    const logs = await sql`SELECT * FROM activity_logs ORDER BY id DESC LIMIT 50`;
+    if (logs.length > 0) {
+      memoryDb.activityLogs = logs.map((l: any) => ({
+        ...l,
+        created_at: l.created_at ? new Date(l.created_at).toISOString() : new Date().toISOString(),
+      }));
+    }
+  } catch (e: any) {
+    console.warn("Sinkronisasi activity_logs:", e.message || String(e));
+  }
+
+  console.log("✓ Verifikasi dan sinkronisasi data dari Neon PostgreSQL ke memori server selesai.");
 }
 
 export async function refreshMemoryFromNeon() {

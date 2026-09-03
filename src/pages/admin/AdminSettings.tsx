@@ -31,6 +31,10 @@ import {
   Mail,
   Cloud,
   RefreshCw,
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  Layers,
 } from "lucide-react";
 
 interface AdminSettingsProps {
@@ -51,6 +55,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
   const [dbInitNotice, setDbInitNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
   const [sqlCopied, setSqlCopied] = useState(false);
+  const [sqlTab, setSqlTab] = useState<"missing" | "all">("missing");
+  const [showTablesList, setShowTablesList] = useState(false);
   const [testingCloudinary, setTestingCloudinary] = useState(false);
   const [cloudinaryNotice, setCloudinaryNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [testingGemini, setTestingGemini] = useState(false);
@@ -1247,7 +1253,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                 </div>
                 {integrationStatus?.neon?.connected ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <CheckCircle2 className="w-3 h-3" /> Terhubung ({dbStatus?.tableCount ?? 0} Tabel)
+                    <CheckCircle2 className="w-3 h-3" /> Terhubung ({dbStatus?.tableCount ?? 0} dari 13 Tabel)
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400">
@@ -1256,54 +1262,182 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
                 )}
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Persistensi cloud database relasional aman untuk orderan, produk, supplier, dan kas.
+                Persistensi cloud database relasional aman untuk orderan, produk, supplier, kas 5 kantong, dan akun staff.
               </p>
 
-              {dbInitNotice && (
-                <div
-                  className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
-                    dbInitNotice.type === "success"
-                      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                      : "bg-rose-50 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
-                  }`}
-                >
-                  {dbInitNotice.type === "success" ? (
-                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  )}
-                  <span>{dbInitNotice.message}</span>
-                </div>
-              )}
+              {/* Missing Tables Notice */}
+              {(() => {
+                const EXPECTED_TABLES = [
+                  { name: "admin_users", label: "Admin & Staff (admin_users)", desc: "Login & akun pengguna staf" },
+                  { name: "activity_logs", label: "Activity Logs (activity_logs)", desc: "Riwayat aktivitas audit trail" },
+                  { name: "products", label: "Katalog Produk (products)", desc: "Daftar produk cetak & harga" },
+                  { name: "orders", label: "Pesanan (orders)", desc: "Nota order & status pengerjaan" },
+                  { name: "order_items", label: "Item Pesanan (order_items)", desc: "Spesifikasi cetak & dimensi PxL" },
+                  { name: "vendors", label: "Supplier (vendors)", desc: "Vendor kulakan bahan" },
+                  { name: "product_vendors", label: "Relasi Vendor (product_vendors)", desc: "Harga modal kulakan default" },
+                  { name: "purchase_history", label: "Riwayat Belanja (purchase_history)", desc: "Belanja bahan baku" },
+                  { name: "guides", label: "Panduan & SOP (guides)", desc: "Template chat & SOP toko" },
+                  { name: "categories", label: "Kategori (categories)", desc: "Kategori kas masuk/keluar" },
+                  { name: "transactions", label: "Keuangan / Kas (transactions)", desc: "Mutasi kas & alokasi 5 kantong" },
+                  { name: "store_settings", label: "Profil Toko (store_settings)", desc: "Logo, profil, & rekening kasir" },
+                  { name: "savings_targets", label: "Tabungan Kas (savings_targets)", desc: "Target tabungan & angsuran kas" },
+                ];
 
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  onClick={handleSyncDatabase}
-                  disabled={syncingDb || initingDb}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${syncingDb ? "animate-spin" : ""}`} />
-                  {syncingDb ? "Menyinkronkan Data..." : "🔄 Tarik Data dari Neon (Sync)"}
-                </button>
-                <button
-                  onClick={handleInitDatabase}
-                  disabled={initingDb || syncingDb}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
-                >
-                  <Database className={`w-3.5 h-3.5 ${initingDb ? "animate-spin" : ""}`} />
-                  {initingDb ? "Memeriksa Skema..." : "⚡ Verifikasi Skema Tabel"}
-                </button>
-                <button
-                  onClick={() => setSqlModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  Lihat / Salin Skema SQL
-                </button>
-              </div>
+                const currentTableMap = new Map<string, number>(
+                  (dbStatus?.tables || []).map((t: any) => [t.name.toLowerCase(), t.rowCount])
+                );
+                const missingTables = EXPECTED_TABLES.filter((t) => !currentTableMap.has(t.name.toLowerCase()));
+
+                return (
+                  <>
+                    {integrationStatus?.neon?.connected && missingTables.length > 0 && (
+                      <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-2">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                          <div className="space-y-1">
+                            <p className="font-semibold text-xs">
+                              Perhatian: {missingTables.length} tabel belum terdeteksi di Neon ({missingTables.map((m) => m.name).join(", ")})
+                            </p>
+                            <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-normal">
+                              Tabel ini diperlukan untuk fitur login akun staff dan log aktivitas. Anda dapat membuatnya otomatis dengan klik tombol di bawah ini.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleInitDatabase}
+                            disabled={initingDb || syncingDb}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            {initingDb ? "Sedang Membuat..." : "⚡ Buat Otomatis Tabel yang Belum Ada"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSqlTab("missing");
+                              setSqlModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            Salin Script SQL ({missingTables.map((m) => m.name).join(" & ")})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {dbInitNotice && (
+                      <div
+                        className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                          dbInitNotice.type === "success"
+                            ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                            : "bg-rose-50 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                        }`}
+                      >
+                        {dbInitNotice.type === "success" ? (
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                        )}
+                        <span>{dbInitNotice.message}</span>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        onClick={handleSyncDatabase}
+                        disabled={syncingDb || initingDb}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${syncingDb ? "animate-spin" : ""}`} />
+                        {syncingDb ? "Menyinkronkan Data..." : "🔄 Tarik Data dari Neon (Sync)"}
+                      </button>
+                      <button
+                        onClick={handleInitDatabase}
+                        disabled={initingDb || syncingDb}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+                      >
+                        <Database className={`w-3.5 h-3.5 ${initingDb ? "animate-spin" : ""}`} />
+                        {initingDb ? "Memeriksa Skema..." : "⚡ Verifikasi Skema Tabel"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSqlTab(missingTables.length > 0 ? "missing" : "all");
+                          setSqlModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Lihat / Salin Skema SQL
+                      </button>
+                      {integrationStatus?.neon?.connected && (
+                        <button
+                          type="button"
+                          onClick={() => setShowTablesList(!showTablesList)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold cursor-pointer transition-colors ml-auto"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          Detail 13 Tabel
+                          {showTablesList ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Collapsible 13 Tables Status Grid */}
+                    {showTablesList && integrationStatus?.neon?.connected && (
+                      <div className="mt-2 p-3 bg-white dark:bg-slate-900/90 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                            Status 13 Tabel Skema Jeres Studio di Neon PostgreSQL:
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {dbStatus?.tableCount ?? 0}/13 Terpasang
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                          {EXPECTED_TABLES.map((tbl) => {
+                            const isPresent = currentTableMap.has(tbl.name.toLowerCase());
+                            const rows = currentTableMap.get(tbl.name.toLowerCase()) ?? 0;
+                            return (
+                              <div
+                                key={tbl.name}
+                                className={`p-2 rounded border flex items-center justify-between gap-2 text-[11px] ${
+                                  isPresent
+                                    ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-300"
+                                    : "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-300"
+                                }`}
+                              >
+                                <div className="truncate">
+                                  <span className="font-mono font-bold block truncate">{tbl.name}</span>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                                    {tbl.desc}
+                                  </span>
+                                </div>
+                                <div className="shrink-0">
+                                  {isPresent ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 rounded">
+                                      <CheckCircle2 className="w-3 h-3" /> {rows} baris
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded">
+                                      <AlertCircle className="w-3 h-3" /> Belum Ada
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               <div className="text-[11px] text-slate-500 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
-                <strong>Status:</strong> {integrationStatus?.neon?.connected ? `Tersambung ke cloud database Neon (${dbStatus?.tableCount ?? 0} dari 12 tabel aktif).` : "Data tersimpan di cache server aktif."}
+                <strong>Status:</strong> {integrationStatus?.neon?.connected ? `Tersambung ke cloud database Neon (${dbStatus?.tableCount ?? 0} dari 13 tabel aktif).` : "Data tersimpan di cache server aktif."}
               </div>
             </div>
 
@@ -1640,7 +1774,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
       {/* SQL Schema Modal */}
       {sqlModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] flex flex-col">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-5 space-y-3 max-h-[88vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600">
@@ -1663,8 +1797,72 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-slate-950 text-emerald-400 font-mono text-[11px] p-4 rounded-xl border border-slate-800 space-y-2 select-all leading-relaxed">
-              <pre className="whitespace-pre-wrap">{`-- Skema Tabel Jeres Studio untuk Neon PostgreSQL
+            {/* Tab Selector */}
+            <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setSqlTab("missing")}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                  sqlTab === "missing"
+                    ? "bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                ⚡ Khusus Tabel yang Belum Ada (admin_users & activity_logs)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSqlTab("all")}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                  sqlTab === "all"
+                    ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                📦 Skema Lengkap (13 Tabel)
+              </button>
+            </div>
+
+            {sqlTab === "missing" ? (
+              <div className="flex-1 overflow-y-auto bg-slate-950 text-amber-400 font-mono text-[11px] p-4 rounded-xl border border-amber-900/40 space-y-2 select-all leading-relaxed">
+                <pre className="whitespace-pre-wrap">{`-- ====================================================================
+-- SKEMA KHUSUS TABEL YANG BELUM ADA DI NEON:
+-- 1. admin_users (Akun Login Staff & Owner)
+-- 2. activity_logs (Audit Trail Riwayat Aktivitas)
+-- ====================================================================
+
+-- 1. Tabel admin_users
+CREATE TABLE IF NOT EXISTS admin_users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  nama VARCHAR(100) NOT NULL,
+  role VARCHAR(20) DEFAULT 'staff' NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- Insert Akun Default (Password: admin123)
+INSERT INTO admin_users (id, username, password_hash, nama, role, created_at)
+VALUES 
+  (1, 'admin', '$2b$10$w8TfBq5vXQ9F/82b4aE/w.69Wl5q2e6L5iN8C/kM3P5hY8lD4mK0S', 'Jeres Owner', 'owner', CURRENT_TIMESTAMP),
+  (2, 'staff', '$2b$10$w8TfBq5vXQ9F/82b4aE/w.69Wl5q2e6L5iN8C/kM3P5hY8lD4mK0S', 'Rian Kasir', 'staff', CURRENT_TIMESTAMP)
+ON CONFLICT (username) DO NOTHING;
+
+-- Sinkronkan sequence serial ID
+SELECT setval(pg_get_serial_sequence('admin_users', 'id'), COALESCE((SELECT MAX(id) FROM admin_users), 1));
+
+-- 2. Tabel activity_logs
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id SERIAL PRIMARY KEY,
+  user_name VARCHAR(100) NOT NULL,
+  action VARCHAR(100) NOT NULL,
+  details TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);`}</pre>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto bg-slate-950 text-emerald-400 font-mono text-[11px] p-4 rounded-xl border border-slate-800 space-y-2 select-all leading-relaxed">
+                <pre className="whitespace-pre-wrap">{`-- Skema Lengkap 13 Tabel Jeres Studio untuk Neon PostgreSQL
 CREATE TABLE IF NOT EXISTS admin_users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(50) NOT NULL UNIQUE,
@@ -1803,6 +2001,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   metode_pembayaran VARCHAR(50) DEFAULT 'Cash' NOT NULL,
   keterangan TEXT NOT NULL,
   referensi VARCHAR(100),
+  items TEXT,
   created_by VARCHAR(100) DEFAULT 'admin',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -1821,8 +2020,24 @@ CREATE TABLE IF NOT EXISTS store_settings (
   margin_threshold_good VARCHAR(10) DEFAULT '20',
   margin_threshold_warning VARCHAR(10) DEFAULT '10',
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS savings_targets (
+  id SERIAL PRIMARY KEY,
+  tipe VARCHAR(20) DEFAULT 'tabungan' NOT NULL,
+  nama VARCHAR(150) NOT NULL,
+  target_nominal NUMERIC NOT NULL,
+  terkumpul_nominal NUMERIC DEFAULT 0 NOT NULL,
+  sumber_kantong_default VARCHAR(50) DEFAULT 'margin' NOT NULL,
+  jatuh_tempo VARCHAR(50),
+  cicilan_per_bulan NUMERIC DEFAULT 0,
+  catatan TEXT,
+  status VARCHAR(20) DEFAULT 'aktif' NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );`}</pre>
-            </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
               <span className="text-xs text-slate-500">
@@ -1832,19 +2047,12 @@ CREATE TABLE IF NOT EXISTS store_settings (
                 <button
                   type="button"
                   onClick={() => {
-                    const sqlText = `-- Skema Tabel Jeres Studio untuk Neon PostgreSQL
-CREATE TABLE IF NOT EXISTS admin_users (id SERIAL PRIMARY KEY, username VARCHAR(50) NOT NULL UNIQUE, password_hash TEXT NOT NULL, nama VARCHAR(100) NOT NULL, role VARCHAR(20) DEFAULT 'staff' NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, kategori VARCHAR(50) NOT NULL, nama_item VARCHAR(150) NOT NULL, deskripsi TEXT, satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL, harga INTEGER NOT NULL, harga_minimum_qty INTEGER DEFAULT 1, gambar_url TEXT, images TEXT, is_active BOOLEAN DEFAULT TRUE NOT NULL, tampilkan_harga_publik BOOLEAN DEFAULT TRUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, nomor_nota VARCHAR(50) NOT NULL UNIQUE, nama_pelanggan VARCHAR(150) NOT NULL, no_wa VARCHAR(50) NOT NULL, tanggal_order TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, tanggal_ambil TIMESTAMP, status VARCHAR(30) DEFAULT 'pending' NOT NULL, metode_bayar VARCHAR(50) DEFAULT 'Cash' NOT NULL, status_bayar VARCHAR(30) DEFAULT 'belum' NOT NULL, jumlah_dp INTEGER DEFAULT 0, catatan TEXT, subtotal INTEGER DEFAULT 0 NOT NULL, diskon INTEGER DEFAULT 0 NOT NULL, total INTEGER DEFAULT 0 NOT NULL, created_by VARCHAR(100) DEFAULT 'admin', share_token TEXT UNIQUE, share_expires_at TIMESTAMP, progress_notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS order_items (id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, product_id INTEGER REFERENCES products(id) ON DELETE SET NULL, nama_item VARCHAR(150) NOT NULL, qty NUMERIC DEFAULT 1 NOT NULL, satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL, harga_satuan INTEGER NOT NULL, subtotal INTEGER NOT NULL, catatan_item TEXT, panjang NUMERIC, lebar NUMERIC, dimensi_unit VARCHAR(20) DEFAULT 'm', jumlah_lembar INTEGER DEFAULT 1, hitung_dimensi BOOLEAN DEFAULT FALSE);
-CREATE TABLE IF NOT EXISTS vendors (id SERIAL PRIMARY KEY, nama_vendor VARCHAR(150) NOT NULL, kategori_supply VARCHAR(100) DEFAULT 'Lainnya', kontak TEXT, kontak_nama VARCHAR(100), no_wa VARCHAR(50), link TEXT, alamat TEXT, catatan TEXT, is_active BOOLEAN DEFAULT TRUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS product_vendors (id SERIAL PRIMARY KEY, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE, harga_modal INTEGER NOT NULL, is_default BOOLEAN DEFAULT FALSE NOT NULL, catatan TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS purchase_history (id SERIAL PRIMARY KEY, vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE, tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, nama_barang VARCHAR(150) NOT NULL, qty NUMERIC DEFAULT 1 NOT NULL, satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL, harga_satuan INTEGER NOT NULL, total INTEGER NOT NULL, catatan TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS activity_logs (id SERIAL PRIMARY KEY, user_name VARCHAR(100) NOT NULL, action VARCHAR(100) NOT NULL, details TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS guides (id SERIAL PRIMARY KEY, category VARCHAR(100) DEFAULT 'Template Chat' NOT NULL, title VARCHAR(255) NOT NULL, content TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, type VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, tipe VARCHAR(20) NOT NULL, kategori VARCHAR(100) NOT NULL, kantong VARCHAR(50) DEFAULT 'margin' NOT NULL, nominal INTEGER NOT NULL, tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, metode_pembayaran VARCHAR(50) DEFAULT 'Cash' NOT NULL, keterangan TEXT NOT NULL, referensi VARCHAR(100), created_by VARCHAR(100) DEFAULT 'admin', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
-CREATE TABLE IF NOT EXISTS store_settings (id SERIAL PRIMARY KEY, nama_toko VARCHAR(150) DEFAULT 'Jeres Studio' NOT NULL, slogan VARCHAR(250) DEFAULT 'Solusi Cetak & Desain Digital Cepat, Rapi & Berkualitas', alamat TEXT DEFAULT 'Jl. Percetakan No. 134, Kota Kreatif, Indonesia', no_wa VARCHAR(50) DEFAULT '6281234567890' NOT NULL, email VARCHAR(100) DEFAULT 'jeresstudio134@gmail.com', logo_url TEXT DEFAULT '', rekening_bank TEXT DEFAULT 'BCA: 123-456-7890 a/n Jeres Studio\\nMandiri: 987-654-3210 a/n Jeres Studio\\nQRIS: Tersedia di Kasir', catatan_nota TEXT DEFAULT '1. Barang yang sudah dicetak sesuai ACC tidak dapat dikembalikan.\\n2. Pembayaran lunas saat pengambilan barang.\\n3. File disimpan maksimal 30 hari.', margin_threshold_good VARCHAR(10) DEFAULT '20', margin_threshold_warning VARCHAR(10) DEFAULT '10', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);`;
+                    let sqlText = "";
+                    if (sqlTab === "missing") {
+                      sqlText = `CREATE TABLE IF NOT EXISTS admin_users (id SERIAL PRIMARY KEY, username VARCHAR(50) NOT NULL UNIQUE, password_hash TEXT NOT NULL, nama VARCHAR(100) NOT NULL, role VARCHAR(20) DEFAULT 'staff' NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nINSERT INTO admin_users (id, username, password_hash, nama, role, created_at) VALUES (1, 'admin', '$2b$10$w8TfBq5vXQ9F/82b4aE/w.69Wl5q2e6L5iN8C/kM3P5hY8lD4mK0S', 'Jeres Owner', 'owner', CURRENT_TIMESTAMP), (2, 'staff', '$2b$10$w8TfBq5vXQ9F/82b4aE/w.69Wl5q2e6L5iN8C/kM3P5hY8lD4mK0S', 'Rian Kasir', 'staff', CURRENT_TIMESTAMP) ON CONFLICT (username) DO NOTHING;\nSELECT setval(pg_get_serial_sequence('admin_users', 'id'), COALESCE((SELECT MAX(id) FROM admin_users), 1));\nCREATE TABLE IF NOT EXISTS activity_logs (id SERIAL PRIMARY KEY, user_name VARCHAR(100) NOT NULL, action VARCHAR(100) NOT NULL, details TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);`;
+                    } else {
+                      sqlText = `CREATE TABLE IF NOT EXISTS admin_users (id SERIAL PRIMARY KEY, username VARCHAR(50) NOT NULL UNIQUE, password_hash TEXT NOT NULL, nama VARCHAR(100) NOT NULL, role VARCHAR(20) DEFAULT 'staff' NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, kategori VARCHAR(50) NOT NULL, nama_item VARCHAR(150) NOT NULL, deskripsi TEXT, satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL, harga INTEGER NOT NULL, harga_minimum_qty INTEGER DEFAULT 1, gambar_url TEXT, images TEXT, is_active BOOLEAN DEFAULT TRUE NOT NULL, tampilkan_harga_publik BOOLEAN DEFAULT TRUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, nomor_nota VARCHAR(50) NOT NULL UNIQUE, nama_pelanggan VARCHAR(150) NOT NULL, no_wa VARCHAR(50) NOT NULL, tanggal_order TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, tanggal_ambil TIMESTAMP, status VARCHAR(30) DEFAULT 'pending' NOT NULL, metode_bayar VARCHAR(50) DEFAULT 'Cash' NOT NULL, status_bayar VARCHAR(30) DEFAULT 'belum' NOT NULL, jumlah_dp INTEGER DEFAULT 0, catatan TEXT, subtotal INTEGER DEFAULT 0 NOT NULL, diskon INTEGER DEFAULT 0 NOT NULL, total INTEGER DEFAULT 0 NOT NULL, created_by VARCHAR(100) DEFAULT 'admin', share_token TEXT UNIQUE, share_expires_at TIMESTAMP, progress_notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS order_items (id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, product_id INTEGER REFERENCES products(id) ON DELETE SET NULL, nama_item VARCHAR(150) NOT NULL, qty NUMERIC DEFAULT 1 NOT NULL, satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL, harga_satuan INTEGER NOT NULL, subtotal INTEGER NOT NULL, catatan_item TEXT, panjang NUMERIC, lebar NUMERIC, dimensi_unit VARCHAR(20) DEFAULT 'm', jumlah_lembar INTEGER DEFAULT 1, hitung_dimensi BOOLEAN DEFAULT FALSE);\nCREATE TABLE IF NOT EXISTS vendors (id SERIAL PRIMARY KEY, nama_vendor VARCHAR(150) NOT NULL, kategori_supply VARCHAR(100) DEFAULT 'Lainnya', kontak TEXT, kontak_nama VARCHAR(100), no_wa VARCHAR(50), link TEXT, alamat TEXT, catatan TEXT, is_active BOOLEAN DEFAULT TRUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS product_vendors (id SERIAL PRIMARY KEY, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE, harga_modal INTEGER NOT NULL, is_default BOOLEAN DEFAULT FALSE NOT NULL, catatan TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS purchase_history (id SERIAL PRIMARY KEY, vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE, tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, nama_barang VARCHAR(150) NOT NULL, qty NUMERIC DEFAULT 1 NOT NULL, satuan VARCHAR(30) DEFAULT 'pcs' NOT NULL, harga_satuan INTEGER NOT NULL, total INTEGER NOT NULL, catatan TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS activity_logs (id SERIAL PRIMARY KEY, user_name VARCHAR(100) NOT NULL, action VARCHAR(100) NOT NULL, details TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS guides (id SERIAL PRIMARY KEY, category VARCHAR(100) DEFAULT 'Template Chat' NOT NULL, title VARCHAR(255) NOT NULL, content TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, type VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, tipe VARCHAR(20) NOT NULL, kategori VARCHAR(100) NOT NULL, kantong VARCHAR(50) DEFAULT 'margin' NOT NULL, nominal INTEGER NOT NULL, tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, metode_pembayaran VARCHAR(50) DEFAULT 'Cash' NOT NULL, keterangan TEXT NOT NULL, referensi VARCHAR(100), items TEXT, created_by VARCHAR(100) DEFAULT 'admin', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS store_settings (id SERIAL PRIMARY KEY, nama_toko VARCHAR(150) DEFAULT 'Jeres Studio' NOT NULL, slogan VARCHAR(250) DEFAULT 'Solusi Cetak & Desain Digital Cepat, Rapi & Berkualitas', alamat TEXT DEFAULT 'Jl. Percetakan No. 134, Kota Kreatif, Indonesia', no_wa VARCHAR(50) DEFAULT '6281234567890' NOT NULL, email VARCHAR(100) DEFAULT 'jeresstudio134@gmail.com', logo_url TEXT DEFAULT '', rekening_bank TEXT DEFAULT 'BCA: 123-456-7890 a/n Jeres Studio\\nMandiri: 987-654-3210 a/n Jeres Studio\\nQRIS: Tersedia di Kasir', catatan_nota TEXT DEFAULT '1. Barang yang sudah dicetak sesuai ACC tidak dapat dikembalikan.\\n2. Pembayaran lunas saat pengambilan barang.\\n3. File disimpan maksimal 30 hari.', margin_threshold_good VARCHAR(10) DEFAULT '20', margin_threshold_warning VARCHAR(10) DEFAULT '10', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);\nCREATE TABLE IF NOT EXISTS savings_targets (id SERIAL PRIMARY KEY, tipe VARCHAR(20) DEFAULT 'tabungan' NOT NULL, nama VARCHAR(150) NOT NULL, target_nominal NUMERIC NOT NULL, terkumpul_nominal NUMERIC DEFAULT 0 NOT NULL, sumber_kantong_default VARCHAR(50) DEFAULT 'margin' NOT NULL, jatuh_tempo VARCHAR(50), cicilan_per_bulan NUMERIC DEFAULT 0, catatan TEXT, status VARCHAR(20) DEFAULT 'aktif' NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);`;
+                    }
                     navigator.clipboard.writeText(sqlText);
                     setSqlCopied(true);
                     setTimeout(() => setSqlCopied(false), 3000);
@@ -1852,7 +2060,7 @@ CREATE TABLE IF NOT EXISTS store_settings (id SERIAL PRIMARY KEY, nama_toko VARC
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer transition-colors"
                 >
                   <Copy className="w-3.5 h-3.5" />
-                  {sqlCopied ? "Tersalin!" : "Salin Skema SQL"}
+                  {sqlCopied ? "Tersalin!" : `Salin ${sqlTab === "missing" ? "Script Tabel Belum Ada" : "Semua 13 Tabel"}`}
                 </button>
                 <button
                   type="button"
