@@ -226,7 +226,8 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                               <p className="font-semibold text-slate-900 dark:text-white">
                                 {item.nama_item}
                               </p>
-                              {item.panjang && item.lebar ? (
+                              {/* ⬅ CHANGED: cek hitung_dimensi sebelum menampilkan badge ukuran */}
+                              {item.hitung_dimensi && item.panjang && item.lebar ? (
                                 <span className="inline-flex items-center gap-0.5 text-[9.5px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
                                   📐 {item.panjang}{item.dimensi_unit || "m"} × {item.lebar}{item.dimensi_unit || "m"} ({item.jumlah_lembar || 1} lembar)
                                 </span>
