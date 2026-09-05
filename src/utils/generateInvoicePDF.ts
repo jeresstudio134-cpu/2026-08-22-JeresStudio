@@ -73,11 +73,30 @@ export function safeHandlePdfOutput(
     return;
   }
 
-  // Kalau ada tab yang sudah dibuka SEBELUM proses generate PDF (sebelum await),
-  // langsung arahkan tab itu ke file PDF-nya. Ini menghindari popup blocker,
-  // karena tab sudah dibuka selagi masih dalam konteks klik pengguna.
+ // Kalau ada tab yang sudah dibuka SEBELUM proses generate PDF (sebelum await),
+  // isi tab itu dengan halaman HTML berisi <iframe> yang menampilkan PDF-nya.
+  // Ini menghindari popup blocker (tab sudah dibuka saat masih dalam konteks
+  // klik pengguna) SEKALIGUS menghindari perilaku "selalu download" yang
+  // dipicu sebagian browser saat dinavigasi langsung ke file PDF.
   if (targetWindow && !targetWindow.closed) {
-    targetWindow.location.href = blobUrl;
+    try {
+      targetWindow.document.open();
+      targetWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${filename}</title>
+            <style>html, body, iframe { margin: 0; padding: 0; width: 100%; height: 100%; border: none; }</style>
+          </head>
+          <body>
+            <iframe src="${blobUrl}" title="${filename}"></iframe>
+          </body>
+        </html>
+      `);
+      targetWindow.document.close();
+    } catch {
+      targetWindow.location.href = blobUrl;
+    }
     return;
   }
 
