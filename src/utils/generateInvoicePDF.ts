@@ -662,20 +662,32 @@ export async function generateInvoicePDF(
           doc.setFontSize(8.5 * scale);
           const nameLines = doc.splitTextToSize(rawItem.nama_item, maxTextW);
 
+          const hasDim = rawItem.hitung_dimensi && rawItem.panjang && rawItem.lebar;
+          const dimText = hasDim
+            ? `Ukuran: ${rawItem.panjang}${rawItem.dimensi_unit || "m"} × ${rawItem.lebar}${rawItem.dimensi_unit || "m"}${rawItem.jumlah_lembar && rawItem.jumlah_lembar > 1 ? ` (${rawItem.jumlah_lembar} lembar)` : ""}`
+            : "";
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.2 * scale);
+          const dimLines = hasDim ? doc.splitTextToSize(dimText, maxTextW) : [];
+
           let neededHeight = (2.8 * scale) + (nameLines.length * 3.4 * scale) + (2.8 * scale);
+
+          const nameH = nameLines.length * 3.4 * scale;
+          const gapH = 1.3 * scale;
+          const dimH = dimLines.length * 2.8 * scale;
+          const paddingH = 2.8 * scale * 2;
 
           if (rawItem.catatan_item) {
             doc.setFont("helvetica", "italic");
             doc.setFontSize(7.2 * scale);
             const noteText = `Catatan: ${rawItem.catatan_item}`;
             const noteLines = doc.splitTextToSize(noteText, maxTextW);
-
-            const nameH = nameLines.length * 3.4 * scale;
-            const gapH = 1.3 * scale;
             const noteH = noteLines.length * 2.8 * scale;
-            const paddingH = 2.8 * scale * 2; // seimbang: 2.8mm atas, 2.8mm bawah
 
-            neededHeight = paddingH + nameH + gapH + noteH;
+            neededHeight = paddingH + nameH + (hasDim ? gapH + dimH : 0) + gapH + noteH;
+          } else if (hasDim) {
+            neededHeight = paddingH + nameH + gapH + dimH;
           }
 
           (data.cell as any).minCellHeight = neededHeight;
@@ -703,6 +715,23 @@ export async function generateInvoicePDF(
             doc.text(nameLines[i], textX, currentYText);
             if (i < nameLines.length - 1) {
               currentYText += (3.4 * scale);
+            }
+          }
+
+          // 1b. Keterangan Ukuran (Panjang x Lebar), tampil hanya jika hitung_dimensi aktif
+          const hasDim = rawItem.hitung_dimensi && rawItem.panjang && rawItem.lebar;
+          if (hasDim) {
+            currentYText += (1.3 * scale) + (2.3 * scale);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.2 * scale);
+            doc.setTextColor(67, 56, 202);
+            const dimText = `Ukuran: ${rawItem.panjang}${rawItem.dimensi_unit || "m"} × ${rawItem.lebar}${rawItem.dimensi_unit || "m"}${rawItem.jumlah_lembar && rawItem.jumlah_lembar > 1 ? ` (${rawItem.jumlah_lembar} lembar)` : ""}`;
+            const dimLines = doc.splitTextToSize(dimText, maxTextW);
+            for (let i = 0; i < dimLines.length; i++) {
+              doc.text(dimLines[i], textX, currentYText);
+              if (i < dimLines.length - 1) {
+                currentYText += (2.8 * scale);
+              }
             }
           }
 
