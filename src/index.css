@@ -1,11 +1,14 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   @media print {
     @page {
       size: auto;
       margin: 6mm 8mm;
     }
+    /* ... sisa isi file kamu, tidak perlu diubah sama sekali ... */
     
     html, body {
       width: 100% !important;
