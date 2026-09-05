@@ -330,7 +330,6 @@ app.get("/api/auth/me", authenticateToken, (req: Request, res: Response) => {
 
 // Staff List (Owner/Admin Only)
 app.get("/api/auth/staff", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("adminUsers");
   const currentUser = (req as any).user;
   if (currentUser.role !== "owner") {
     res.status(403).json({ error: "Hanya Admin/Owner yang dapat melihat daftar staff." });
@@ -527,9 +526,6 @@ app.post("/api/auth/change-password", authenticateToken, (req: Request, res: Res
 
 // Get Products (with public/admin filter)
 app.get("/api/products", optionalAuth, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("products");
-  await ensureFreshFromNeon("vendors");
-
   const isAdmin = !!(req as any).user;
   const { kategori, search, activeOnly } = req.query;
 
@@ -791,7 +787,6 @@ function recordOrderCashPayment(params: {
 
 // Get Orders with filters
 app.get("/api/orders", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("orders");
   const { status, status_bayar, search, startDate, endDate } = req.query;
 
   let results = [...memoryDb.orders];
@@ -838,7 +833,6 @@ app.get("/api/orders", authenticateToken, async (req: Request, res: Response) =>
 
 // Get Single Order (for detail / print invoice)
 app.get("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("orders");
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id || o.nomor_nota === req.params.id);
 
@@ -1380,7 +1374,6 @@ app.post("/api/orders/:id/progress-notes", authenticateToken, async (req: Reques
    PUBLIC ORDER TRACKING ROUTE (NO AUTH REQUIRED)
 ======================================================== */
 app.get("/api/public/track/:token", async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("orders");
   const token = req.params.token?.trim();
   if (!token) {
     res.status(400).json({ error: "Token tracking tidak valid." });
@@ -1486,8 +1479,6 @@ app.delete("/api/orders/:id", authenticateToken, async (req: Request, res: Respo
 
 // Get Vendors
 app.get("/api/vendors", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("vendors");
-  await ensureFreshFromNeon("purchases");
   const { search, kategori } = req.query;
   let list = [...memoryDb.vendors];
 
@@ -1973,8 +1964,6 @@ app.put("/api/settings/margin-threshold", authenticateToken, (req: Request, res:
 
 // Get Purchase History
 app.get("/api/purchases", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("purchases");
-  await ensureFreshFromNeon("vendors");
   const { vendorId } = req.query;
   let list = [...memoryDb.purchaseHistory];
 
@@ -2088,8 +2077,6 @@ function normalizeCategoryType(type: string): "masuk" | "keluar" {
 
 // Get Categories combining registered categories and transaction history
 app.get("/api/categories", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("categories");
-  await ensureFreshFromNeon("transactions");
   const txs = memoryDb.transactions || [];
   if (!memoryDb.categories) {
     memoryDb.categories = [
@@ -2406,9 +2393,6 @@ function alokasikanOrder(
 
 // Get Transactions List with Fast Filters & Map Enrichment
 app.get("/api/transactions", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("transactions");
-  await ensureFreshFromNeon("orders");
-  await ensureFreshFromNeon("purchases");
   const { tipe, kategori, kantong, startDate, endDate, search, metode } = req.query;
   let list = [...(memoryDb.transactions || [])];
 
@@ -2540,7 +2524,6 @@ app.get("/api/transactions", authenticateToken, async (req: Request, res: Respon
 // Get Financial Summary (KPI, Category Breakdown & 5-Pocket Balances)
 app.get("/api/transactions/summary", authenticateToken, async (req: Request, res: Response) => {
   try {
-    await ensureFreshFromNeon("transactions");
     const { kantong, startDate, endDate } = req.query;
     const transactions = memoryDb.transactions || [];
     const now = new Date();
@@ -3329,7 +3312,6 @@ app.post("/api/transactions/transfer-kantong", authenticateToken, (req: Request,
 
 // Get Savings & Angsuran Targets
 app.get("/api/savings-targets", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("savingsTargets");
   const targets = memoryDb.savingsTargets || [];
   res.json({ targets });
 });
@@ -3572,8 +3554,6 @@ app.post("/api/savings-targets/:id/deposit", authenticateToken, (req: Request, r
 ======================================================== */
 
 app.get("/api/dashboard/stats", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("orders");
-  await ensureFreshFromNeon("transactions");
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -3777,7 +3757,6 @@ app.post("/api/settings/restore", authenticateToken, (req: Request, res: Respons
 
 // Get Guides (with search and category filter)
 app.get("/api/guides", authenticateToken, async (req: Request, res: Response) => {
-  await ensureFreshFromNeon("guides");
   const { category, search } = req.query;
   let list = memoryDb.guides || [];
 
