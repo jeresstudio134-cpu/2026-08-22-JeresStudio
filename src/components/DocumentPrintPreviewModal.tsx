@@ -77,9 +77,9 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
   const diskon = Number(order.diskon) || 0;
   const pajak = Number(order.pajak) || 0;
   const grandTotal = Number(order.total) || Math.max(0, subtotal - diskon + pajak);
-  const dp = Number(order.dp) || 0;
-  const sisa = Number(order.sisa_tagihan) !== undefined ? Number(order.sisa_tagihan) : Math.max(0, grandTotal - dp);
-  const isLunas = order.status_bayar === "Lunas" || sisa <= 0;
+  const dp = Number(order.jumlah_dp) || 0;
+  const sisa = Math.max(0, grandTotal - (order.status_bayar === "lunas" ? grandTotal : dp));
+  const isLunas = order.status_bayar === "lunas" || sisa <= 0;
 
   const formatRp = (num: number) => {
     return "Rp " + Math.round(num).toLocaleString("id-ID");
@@ -727,10 +727,12 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="font-semibold text-slate-900">{item.nama_item}</div>
-                            {(item.panjang || item.lebar || item.catatan) && (
+                            {((item.hitung_dimensi && item.panjang && item.lebar) || item.catatan_item) && (
                               <div className="text-[11px] text-slate-500 mt-0.5">
-                                {item.panjang && item.lebar ? `${item.panjang}m × ${item.lebar}m` : ""}
-                                {item.catatan ? ` • ${item.catatan}` : ""}
+                                {item.hitung_dimensi && item.panjang && item.lebar
+                                  ? `${item.panjang}${item.dimensi_unit || "m"} × ${item.lebar}${item.dimensi_unit || "m"}${item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar} lbr)` : ""}`
+                                  : ""}
+                                {item.catatan_item ? ` • ${item.catatan_item}` : ""}
                               </div>
                             )}
                           </td>
