@@ -1608,4 +1608,4 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
       />
     </div>
   );
-};
+}
