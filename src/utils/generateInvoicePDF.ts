@@ -34,6 +34,7 @@ export interface InvoicePdfOptions {
   action?: "open" | "download" | "print" | "blob";
   filename?: string;
   paperFormat?: PaperFormat;
+  targetWindow?: Window | null;
 }
 
 export interface InvoicePdfResult {
@@ -61,13 +62,22 @@ export function safeHandlePdfOutput(
   pdfBlob: Blob,
   blobUrl: string,
   filename: string,
-  action: "download" | "open" | "print" | "blob" = "open"
+  action: "download" | "open" | "print" | "blob" = "open",
+  targetWindow?: Window | null
 ): void {
   if (typeof window === "undefined") return;
   if (action === "blob") return;
 
   if (action === "download") {
     doc.save(filename);
+    return;
+  }
+
+  // Kalau ada tab yang sudah dibuka SEBELUM proses generate PDF (sebelum await),
+  // langsung arahkan tab itu ke file PDF-nya. Ini menghindari popup blocker,
+  // karena tab sudah dibuka selagi masih dalam konteks klik pengguna.
+  if (targetWindow && !targetWindow.closed) {
+    targetWindow.location.href = blobUrl;
     return;
   }
 
@@ -396,7 +406,7 @@ export async function generateInvoicePDF(
     const pdfBlob = doc.output("blob");
     const blobUrl = URL.createObjectURL(pdfBlob);
 
-    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
     return { doc, blob: pdfBlob, blobUrl, filename };
   }
@@ -930,7 +940,7 @@ export async function generateInvoicePDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1167,7 +1177,7 @@ export async function generateSuratJalanPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1383,7 +1393,7 @@ export async function generateTandaTerimaPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
