@@ -142,10 +142,13 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
 
   // Action: Print Now
   const handlePrint = async () => {
+    // Buka tab kosong DULUAN, sebelum ada proses async — supaya browser masih
+    // menganggap ini aksi langsung dari klik pengguna, jadi tidak diblokir
+    // popup blocker. Nanti tab ini diarahkan ke PDF setelah selesai dibuat.
+    const printTab = window.open("", "_blank");
     try {
       setIsPrinting(true);
-      // Trigger PDF printer or browser print
-      const options = { action: "print" as const, paperFormat: paperFormat };
+      const options = { action: "print" as const, paperFormat: paperFormat, targetWindow: printTab };
       if (docType === "faktur") {
         await generateInvoicePDF(order, settings, options);
       } else if (docType === "surat_jalan") {
@@ -155,6 +158,7 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
       }
     } catch (err: any) {
       console.error("Gagal cetak:", err);
+      if (printTab && !printTab.closed) printTab.close();
       window.print();
     } finally {
       setIsPrinting(false);
