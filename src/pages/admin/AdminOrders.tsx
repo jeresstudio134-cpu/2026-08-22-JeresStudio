@@ -348,6 +348,12 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         if (current.satuan === "pcs") current.satuan = "meter";
         const { totalVolume } = calculateItemDimension(current.panjang, current.lebar, current.dimensi_unit, current.jumlah_lembar);
         current.qty = totalVolume > 0 ? totalVolume : 1;
+      } else {
+        // Toggle dimatikan manual — bersihkan nilai dimensi biar tidak nempel & tidak muncul di badge/nota
+        current.panjang = null;
+        current.lebar = null;
+        current.jumlah_lembar = 1;
+        current.qty = 1;
       }
     } else {
       if (current.hitung_dimensi) {
@@ -684,7 +690,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                             {order.items.slice(0, 2).map((item, idx) => (
                               <p key={idx} className="text-zinc-700 dark:text-zinc-300 text-[10.5px] leading-tight break-words">
                                 • {item.qty} {item.satuan} {item.nama_item}
-                                {item.panjang && item.lebar ? (
+                                {item.hitung_dimensi && item.panjang && item.lebar ? (
                                   <span className="inline-block ml-1 px-1 py-0.2 text-[9px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold rounded border border-indigo-200 dark:border-indigo-800">
                                     {item.panjang}{item.dimensi_unit || "m"}×{item.lebar}{item.dimensi_unit || "m"}{item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar}lbr)` : ""}
                                   </span>
