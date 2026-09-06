@@ -1,6 +1,0 @@
-{
-  "name": "Jeres Studio",
-  "description": "Full-stack web application untuk Toko Percetakan & Digital (Stiker, DTF, Banner, Jersey, Desain) dengan CRUD Price List, Kalkulator HPP & Simulasi Massal Vendor, Manajemen Orderan, Cetak Dokumen (Faktur, Surat Jalan, Tanda Terima, XLS, CSV), Pengiriman Tagihan, Vendor/Kulakan, Dashboard & Integrasi Vercel + Neon PostgreSQL.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
