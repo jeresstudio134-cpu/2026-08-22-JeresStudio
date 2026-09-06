@@ -120,17 +120,19 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
     setUserPaperPreference(paper);
   };
 
+
+
   // Action: Download PDF
   const handleDownloadPdf = async () => {
     try {
       setIsGeneratingPdf(true);
       const options = { action: "download" as const, paperFormat: paperFormat };
-      if (docType === "faktur") {
-        await generateInvoicePDF(order, settings, options);
-      } else if (docType === "surat_jalan") {
+      if (docType === "surat_jalan") {
         await generateSuratJalanPDF(order, settings, options);
-      } else {
+      } else if (docType === "tanda_terima") {
         await generateTandaTerimaPDF(order, settings, options);
+      } else {
+        await generateInvoicePDF(order, settings, options);
       }
     } catch (err: any) {
       console.error("Gagal download PDF:", err);
@@ -142,19 +144,16 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
 
   // Action: Print Now
   const handlePrint = async () => {
-    // Buka tab kosong DULUAN, sebelum ada proses async — supaya browser masih
-    // menganggap ini aksi langsung dari klik pengguna, jadi tidak diblokir
-    // popup blocker. Nanti tab ini diarahkan ke PDF setelah selesai dibuat.
     const printTab = window.open("", "_blank");
     try {
       setIsPrinting(true);
       const options = { action: "print" as const, paperFormat: paperFormat, targetWindow: printTab };
-      if (docType === "faktur") {
-        await generateInvoicePDF(order, settings, options);
-      } else if (docType === "surat_jalan") {
+      if (docType === "surat_jalan") {
         await generateSuratJalanPDF(order, settings, options);
-      } else {
+      } else if (docType === "tanda_terima") {
         await generateTandaTerimaPDF(order, settings, options);
+      } else {
+        await generateInvoicePDF(order, settings, options);
       }
     } catch (err: any) {
       console.error("Gagal cetak:", err);

@@ -1,4 +1,4 @@
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { Order, StoreSettings } from "../types/index.js";
@@ -79,24 +79,7 @@ export function safeHandlePdfOutput(
   // klik pengguna) SEKALIGUS menghindari perilaku "selalu download" yang
   // dipicu sebagian browser saat dinavigasi langsung ke file PDF.
   if (targetWindow && !targetWindow.closed) {
-    try {
-      targetWindow.document.open();
-      targetWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>${filename}</title>
-            <style>html, body, iframe { margin: 0; padding: 0; width: 100%; height: 100%; border: none; }</style>
-          </head>
-          <body>
-            <iframe src="${blobUrl}" title="${filename}"></iframe>
-          </body>
-        </html>
-      `);
-      targetWindow.document.close();
-    } catch {
-      targetWindow.location.href = blobUrl;
-    }
+    targetWindow.location.href = blobUrl;
     return;
   }
 
@@ -294,6 +277,13 @@ export async function generateInvoicePDF(
     marginX = 6;
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5", compress: true });
   }
+
+  doc.setProperties({
+    title: `Invoice ${order.nomor_nota || ""} - ${finalSettings?.nama_toko || "Jeres Studio"}`,
+    subject: "Invoice Penjualan",
+    author: finalSettings?.nama_toko || "Jeres Studio",
+    creator: finalSettings?.nama_toko || "Jeres Studio",
+  });
 
   let currentY = paperFormat.startsWith("thermal") ? 5 : 5.5;
 
@@ -1192,6 +1182,13 @@ export async function generateSuratJalanPDF(
     doc.text(r.label, x, sigY + (23 * scale), { align: "center" });
   });
 
+  doc.setProperties({
+    title: `Surat Jalan ${order.nomor_nota || ""} - ${storeName}`,
+    subject: "Surat Jalan Pengiriman",
+    author: storeName,
+    creator: storeName,
+  });
+
   const filename = options.filename || `SuratJalan-${order.nomor_nota}.pdf`;
   const pdfBlob = doc.output("blob");
   const blobUrl = URL.createObjectURL(pdfBlob);
@@ -1407,6 +1404,13 @@ export async function generateTandaTerimaPDF(
   doc.setTextColor(100, 116, 139);
   doc.text(`( ${storeName} )`, leftX, sigY + (23 * scale), { align: "center" });
   doc.text(`( ${order.nama_pelanggan} )`, rightX, sigY + (23 * scale), { align: "center" });
+
+  doc.setProperties({
+    title: `Tanda Terima ${order.nomor_nota || ""} - ${storeName}`,
+    subject: "Tanda Terima Dokumen",
+    author: storeName,
+    creator: storeName,
+  });
 
   const filename = options.filename || `TandaTerima-${order.nomor_nota}.pdf`;
   const pdfBlob = doc.output("blob");

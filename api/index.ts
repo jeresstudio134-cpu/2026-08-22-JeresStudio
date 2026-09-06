@@ -38,6 +38,7 @@ import {
   persistDeleteSavingsTarget,
 } from "../src/db/neonService.js";
 
+
 const app = express();
 
 app.use(express.json({ limit: "15mb" }));
@@ -831,24 +832,9 @@ app.get("/api/orders", authenticateToken, async (req: Request, res: Response) =>
   res.json({ orders: ordersWithItems });
 });
 
-// Get Single Order (for detail / print invoice)
-app.get("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const order = memoryDb.orders.find((o) => o.id === id || o.nomor_nota === req.params.id);
 
-  if (!order) {
-    res.status(404).json({ error: "Order tidak ditemukan." });
-    return;
-  }
 
-  const items = memoryDb.orderItems.filter((i) => i.order_id === order.id);
-  res.json({
-    order: {
-      ...order,
-      items,
-    },
-  });
-});
+
 
 // Create Order
 app.post("/api/orders", authenticateToken, async (req: Request, res: Response) => {
