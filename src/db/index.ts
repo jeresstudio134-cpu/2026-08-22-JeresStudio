@@ -1,24 +1,40 @@
+import "dotenv/config";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema.js";
 import bcrypt from "bcryptjs";
 
-// Check if DATABASE_URL is valid Neon connection
-const databaseUrl = process.env.DATABASE_URL;
+export function getCleanDatabaseUrl(): string | undefined {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return undefined;
+  const clean = raw.trim().replace(/^["']|["']$/g, "").trim();
+  return clean || undefined;
+}
 
 export let db: any = null;
 export let isNeonConnected = false;
 
-if (databaseUrl && databaseUrl.includes("postgres") && !databaseUrl.includes("sample")) {
-  try {
-    const sql = neon(databaseUrl);
-    db = drizzle(sql, { schema });
-    isNeonConnected = true;
-    console.log("Connected to Neon PostgreSQL database");
-  } catch (err) {
-    console.warn("Could not connect to Neon PostgreSQL, falling back to storage provider:", err);
+export function connectNeonDatabase(): boolean {
+  const databaseUrl = getCleanDatabaseUrl();
+  if (databaseUrl && databaseUrl.includes("postgres") && !databaseUrl.includes("sample")) {
+    try {
+      const sql = neon(databaseUrl);
+      db = drizzle(sql, { schema });
+      isNeonConnected = true;
+      console.log("Connected to Neon PostgreSQL database");
+      return true;
+    } catch (err) {
+      console.warn("Could not connect to Neon PostgreSQL, falling back to storage provider:", err);
+      isNeonConnected = false;
+      return false;
+    }
   }
+  isNeonConnected = false;
+  return false;
 }
+
+// Initial connection attempt
+connectNeonDatabase();
 
 // In-Memory resilient repository for fast local preview & fallback
 export interface MemoryStore {
@@ -221,174 +237,8 @@ export const memoryDb: MemoryStore = {
       updated_at: new Date().toISOString(),
     }
   ],
-  orders: [
-    {
-      id: 1,
-      nomor_nota: "INV-20250820-0001",
-      nama_pelanggan: "Budi Pratama (Kedai Kopi Santai)",
-      no_wa: "081298765432",
-      tanggal_order: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      tanggal_ambil: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "proses",
-      metode_bayar: "Transfer BCA",
-      status_bayar: "dp",
-      jumlah_dp: 150000,
-      catatan: "Desain logo cup sudah ACC via WA, mohon cutting kiss cut bulat diameter 5cm.",
-      subtotal: 255000,
-      diskon: 15000,
-      total: 240000,
-      created_by: "Jeres Owner",
-      share_token: "track-budi-kopi-82001",
-      share_expires_at: null,
-      progress_notes: [
-        {
-          status: "Pending",
-          detail: "Order diterima & DP Rp 150.000 terkonfirmasi via Transfer BCA",
-          timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          status: "Dalam Proses",
-          detail: "File desain sudah ACC, sedang naik cetak mesin vinyl waterproof",
-          timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          status: "Dalam Proses",
-          detail: "Proses cutting kiss cut bulat presisi & laminasi glossy",
-          timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-        }
-      ],
-      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 2,
-      nomor_nota: "INV-20250821-0002",
-      nama_pelanggan: "Komunitas Futsal Garuda",
-      no_wa: "085712345678",
-      tanggal_order: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      tanggal_ambil: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "pending",
-      metode_bayar: "Cash",
-      status_bayar: "belum",
-      jumlah_dp: 0,
-      catatan: "Jersey 12 pcs size L (8) dan XL (4), list nama pemain terlampir di WA.",
-      subtotal: 1440000,
-      diskon: 40000,
-      total: 1400000,
-      created_by: "Rian Kasir",
-      share_token: "track-futsal-garuda-82102",
-      share_expires_at: null,
-      progress_notes: [
-        {
-          status: "Pending",
-          detail: "Nota order dibuat. Menunggu konfirmasi list nama pemain & pembayaran",
-          timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        }
-      ],
-      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 3,
-      nomor_nota: "INV-20250819-0003",
-      nama_pelanggan: "Siti Rahma (Toko Berkah Snack)",
-      no_wa: "087811223344",
-      tanggal_order: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      tanggal_ambil: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "selesai",
-      metode_bayar: "QRIS",
-      status_bayar: "lunas",
-      jumlah_dp: 160000,
-      catatan: "Banner warung 3x1 meter + stiker label 2 meter. Sudah diambil pelanggan.",
-      subtotal: 170000,
-      diskon: 10000,
-      total: 160000,
-      created_by: "Jeres Owner",
-      share_token: "track-berkah-snack-81903",
-      share_expires_at: new Date(Date.now() + 26 * 24 * 60 * 60 * 1000).toISOString(),
-      progress_notes: [
-        {
-          status: "Pending",
-          detail: "Order diterima via QRIS lunas",
-          timestamp: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          status: "Dalam Proses",
-          detail: "Cetak flexi banner outdoor 280gr & stiker vinyl",
-          timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          status: "Dalam Proses",
-          detail: "Finishing mata ayam banner & packing pesanan",
-          timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          status: "Selesai",
-          detail: "Pesanan selesai & telah diserahkan kepada pelanggan",
-          timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        }
-      ],
-      created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    }
-  ],
-  orderItems: [
-    {
-      id: 1,
-      order_id: 1,
-      product_id: 1,
-      nama_item: "Stiker Vinyl Glossy / Matte (Meteran)",
-      qty: 3,
-      satuan: "meter",
-      harga_satuan: 85000,
-      subtotal: 255000,
-      catatan_item: "Cutting bulat 5cm, laminasi glossy anti gores",
-    },
-    {
-      id: 2,
-      order_id: 2,
-      product_id: 7,
-      nama_item: "Jersey Full Printing Sublim (Milano/Dryfit)",
-      qty: 12,
-      satuan: "pcs",
-      harga_satuan: 120000,
-      subtotal: 1440000,
-      catatan_item: "Bahan dryfit milano, nomor punggung emas",
-    },
-    {
-      id: 3,
-      order_id: 3,
-      product_id: 5,
-      nama_item: "Banner Flexi 280gr Outdoor (Spanduk)",
-      qty: 3,
-      satuan: "meter",
-      harga_satuan: 25000,
-      subtotal: 75000,
-      catatan_item: "Ukuran 3x1m mata ayam 4 sudut",
-    },
-    {
-      id: 4,
-      order_id: 3,
-      product_id: 1,
-      nama_item: "Stiker Vinyl Glossy / Matte (Meteran)",
-      qty: 1,
-      satuan: "meter",
-      harga_satuan: 85000,
-      subtotal: 85000,
-      catatan_item: "Label kemasan keripik",
-    },
-    {
-      id: 5,
-      order_id: 3,
-      product_id: 8,
-      nama_item: "Jasa Desain Grafis / Setting Cetak",
-      qty: 1,
-      satuan: "paket",
-      harga_satuan: 10000,
-      subtotal: 10000,
-      catatan_item: "Setting ulang font banner",
-    }
-  ],
+  orders: [],
+  orderItems: [],
   vendors: [
     {
       id: 1,
@@ -505,32 +355,7 @@ export const memoryDb: MemoryStore = {
       updated_at: new Date().toISOString(),
     }
   ],
-  purchaseHistory: [
-    {
-      id: 1,
-      vendor_id: 1,
-      tanggal: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      nama_barang: "Vinyl Glossy Maxdecal 1.05m x 50m (1 Roll)",
-      qty: 1,
-      satuan: "roll",
-      harga_satuan: 950000,
-      total: 950000,
-      catatan: "Bahan stok mingguan stiker label",
-      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 2,
-      vendor_id: 2,
-      tanggal: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      nama_barang: "PET Film DTF 60cm x 100m + Hotmelt Powder 5kg",
-      qty: 1,
-      satuan: "paket",
-      harga_satuan: 1450000,
-      total: 1450000,
-      catatan: "Untuk kebutuhan cetak DTF sablon kaos",
-      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    }
-  ],
+  purchaseHistory: [],
   categories: [
     { id: 1, name: "Pemasukan Toko", type: "masuk", created_at: new Date().toISOString() },
     { id: 2, name: "Pemasukan Pribadi", type: "masuk", created_at: new Date().toISOString() },
@@ -539,136 +364,8 @@ export const memoryDb: MemoryStore = {
     { id: 5, name: "Operasional Toko", type: "keluar", created_at: new Date().toISOString() },
     { id: 6, name: "Pengeluaran Pribadi / Prive", type: "keluar", created_at: new Date().toISOString() },
   ],
-  transactions: [
-    {
-      id: 1,
-      tipe: "masuk",
-      kategori: "Pemasukan Toko",
-      kantong: "modal",
-      nominal: 1350000,
-      tanggal: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "Transfer BCA",
-      keterangan: "Alokasi Modal Order Cetak Banner & Stiker (Bpk. Agus Prasetyo)",
-      referensi: "INV-20250821-0001",
-      created_by: "Jeres Owner",
-      created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 2,
-      tipe: "keluar",
-      kategori: "Kulakan Bahan Baku",
-      kantong: "modal",
-      nominal: 950000,
-      tanggal: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "Transfer BCA",
-      keterangan: "Pembelian Vinyl Glossy Maxdecal 1 Roll (CV Mitra Sticker Mandiri)",
-      referensi: "Kulakan #1",
-      created_by: "Jeres Owner",
-      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 3,
-      tipe: "masuk",
-      kategori: "Pemasukan Toko",
-      kantong: "margin",
-      nominal: 650000,
-      tanggal: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "QRIS",
-      keterangan: "Alokasi Margin Bersih Order Cetak Spanduk & Stiker (Ibu Siti Rahma)",
-      referensi: "INV-20250819-0003",
-      created_by: "Jeres Owner",
-      created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 4,
-      tipe: "masuk",
-      kategori: "Pemasukan Toko",
-      kantong: "overhead",
-      nominal: 800000,
-      tanggal: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "Transfer BCA",
-      keterangan: "Alokasi Biaya Overhead Operasional Toko dari Order Mingguan",
-      referensi: "ALOK-OVH-01",
-      created_by: "Jeres Owner",
-      created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 5,
-      tipe: "masuk",
-      kategori: "Pemasukan Pribadi",
-      kantong: "gaji_saya",
-      nominal: 550000,
-      tanggal: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "Cash",
-      keterangan: "Jasa Desain Grafis & Setting Logo Toko Roti (Owner Desain)",
-      referensi: "JASA-DES-01",
-      created_by: "Rian Kasir",
-      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 6,
-      tipe: "masuk",
-      kategori: "Pemasukan Toko",
-      kantong: "gaji_karyawan",
-      nominal: 450000,
-      tanggal: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "Transfer BCA",
-      keterangan: "Alokasi Upah Desain & Setting Operator Karyawan (Order Sablon)",
-      referensi: "ALOK-STF-01",
-      created_by: "Jeres Owner",
-      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 7,
-      tipe: "keluar",
-      kategori: "Operasional Toko",
-      kantong: "overhead",
-      nominal: 385000,
-      tanggal: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      metode_pembayaran: "Transfer BCA",
-      keterangan: "Tagihan Listrik PLN Workshop Percetakan & Token Cadangan",
-      referensi: "PLN-882193",
-      created_by: "Jeres Owner",
-      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 8,
-      tipe: "masuk",
-      kategori: "Pemasukan Toko",
-      kantong: "modal",
-      nominal: 1200000,
-      tanggal: new Date().toISOString(),
-      metode_pembayaran: "Transfer BCA",
-      keterangan: "DP 50% Pembuatan Jersey Tim Futsal - Alokasi Modal Kain & Sublim",
-      referensi: "INV-20250821-0002",
-      created_by: "Rian Kasir",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  ],
-  activityLogs: [
-    {
-      id: 1,
-      user_name: "Jeres Owner",
-      action: "Login Admin",
-      details: "Owner berhasil masuk ke dashboard sistem",
-      created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 2,
-      user_name: "Rian Kasir",
-      action: "Buat Order Baru",
-      details: "Membuat nota order INV-20250821-0002 untuk Komunitas Futsal Garuda",
-      created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    }
-  ],
+  transactions: [],
+  activityLogs: [],
   guides: [
     {
       id: 1,
@@ -741,48 +438,5 @@ export const memoryDb: MemoryStore = {
     margin_threshold_warning: "10",
     updated_at: new Date().toISOString(),
   },
-  savingsTargets: [
-    {
-      id: 1,
-      tipe: "tabungan",
-      nama: "Tabungan Upgrade Mesin A3+ Digital",
-      target_nominal: 15000000,
-      terkumpul_nominal: 4500000,
-      sumber_kantong_default: "margin",
-      jatuh_tempo: "2026-12-31",
-      cicilan_per_bulan: 1500000,
-      catatan: "Disisihkan rutin dari laba bersih Margin untuk beli mesin baru",
-      status: "aktif",
-      created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      tipe: "angsuran",
-      nama: "Angsuran Cicilan Mesin DTF Sablon",
-      target_nominal: 12000000,
-      terkumpul_nominal: 8000000,
-      sumber_kantong_default: "overhead",
-      jatuh_tempo: "2026-10-15",
-      cicilan_per_bulan: 1000000,
-      catatan: "Jatuh tempo setiap tgl 15 bulan berjalan, diambil dari kas Overhead",
-      status: "aktif",
-      created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 3,
-      tipe: "tabungan",
-      nama: "Dana Darurat & Cadangan Service Toko",
-      target_nominal: 5000000,
-      terkumpul_nominal: 2000000,
-      sumber_kantong_default: "margin",
-      jatuh_tempo: "",
-      cicilan_per_bulan: 500000,
-      catatan: "Dana siaga antisipasi pergantian sparepart / head mesin rusak",
-      status: "aktif",
-      created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  ]
+  savingsTargets: []
 };

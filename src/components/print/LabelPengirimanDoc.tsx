@@ -290,7 +290,7 @@ export const LabelPengirimanDoc = forwardRef<HTMLDivElement, LabelPengirimanDocP
                   </div>
                 ))
               ) : (
-                <p style={{ fontSize: "8.5px", color: "#94a3b8", margin: 0 }}>Iteman</p>
+                <p style={{ fontSize: "8.5px", color: "#94a3b8", margin: 0 }}>Item cetakan</p>
               )}
             </div>
           </div>

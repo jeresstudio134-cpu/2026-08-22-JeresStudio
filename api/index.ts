@@ -826,7 +826,17 @@ app.get("/api/orders", authenticateToken, async (req: Request, res: Response) =>
   // Attach items to each order
   const ordersWithItems = results.map((order) => ({
     ...order,
-    items: memoryDb.orderItems.filter((item) => item.order_id === order.id),
+    items: memoryDb.orderItems
+      .filter((item) => item.order_id === order.id)
+      .map((it) => {
+        const isDim = Boolean(it.hitung_dimensi);
+        return {
+          ...it,
+          hitung_dimensi: isDim,
+          panjang: isDim ? it.panjang : null,
+          lebar: isDim ? it.lebar : null,
+        };
+      }),
   }));
 
   // Sort latest first
@@ -846,7 +856,17 @@ app.get("/api/orders/:id", authenticateToken, async (req: Request, res: Response
     return;
   }
 
-  const items = memoryDb.orderItems.filter((i) => i.order_id === order.id);
+  const items = memoryDb.orderItems
+    .filter((i) => i.order_id === order.id)
+    .map((it) => {
+      const isDim = Boolean(it.hitung_dimensi);
+      return {
+        ...it,
+        hitung_dimensi: isDim,
+        panjang: isDim ? it.panjang : null,
+        lebar: isDim ? it.lebar : null,
+      };
+    });
   res.json({
     order: {
       ...order,
@@ -926,6 +946,7 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
   // Insert items
   let nextItemId = memoryDb.orderItems.length ? Math.max(...memoryDb.orderItems.map((i) => i.id)) + 1 : 1;
   const savedItems = items.map((it: any) => {
+    const isDim = Boolean(it.hitung_dimensi);
     const itemRecord = {
       id: nextItemId++,
       order_id: newOrderId,
@@ -935,11 +956,11 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
       satuan: it.satuan || "pcs",
       harga_satuan: Number(it.harga_satuan) || 0,
       subtotal: (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0),
-      panjang: it.panjang !== undefined && it.panjang !== null ? Number(it.panjang) : null,
-      lebar: it.lebar !== undefined && it.lebar !== null ? Number(it.lebar) : null,
+      panjang: isDim && it.panjang !== undefined && it.panjang !== null ? Number(it.panjang) : null,
+      lebar: isDim && it.lebar !== undefined && it.lebar !== null ? Number(it.lebar) : null,
       dimensi_unit: it.dimensi_unit || "m",
       jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
-      hitung_dimensi: Boolean(it.hitung_dimensi),
+      hitung_dimensi: isDim,
       catatan_item: it.catatan_item || "",
     };
     memoryDb.orderItems.push(itemRecord);
@@ -1031,6 +1052,7 @@ app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response
     // Insert new
     let nextItemId = memoryDb.orderItems.length ? Math.max(...memoryDb.orderItems.map((i) => i.id)) + 1 : 1;
     items.forEach((it: any) => {
+      const isDim = Boolean(it.hitung_dimensi);
       memoryDb.orderItems.push({
         id: nextItemId++,
         order_id: id,
@@ -1040,11 +1062,11 @@ app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response
         satuan: it.satuan || "pcs",
         harga_satuan: Number(it.harga_satuan) || 0,
         subtotal: (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0),
-        panjang: it.panjang !== undefined && it.panjang !== null ? Number(it.panjang) : null,
-        lebar: it.lebar !== undefined && it.lebar !== null ? Number(it.lebar) : null,
+        panjang: isDim && it.panjang !== undefined && it.panjang !== null ? Number(it.panjang) : null,
+        lebar: isDim && it.lebar !== undefined && it.lebar !== null ? Number(it.lebar) : null,
         dimensi_unit: it.dimensi_unit || "m",
         jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
-        hitung_dimensi: Boolean(it.hitung_dimensi),
+        hitung_dimensi: isDim,
         catatan_item: it.catatan_item || "",
       });
     });

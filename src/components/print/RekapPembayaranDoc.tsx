@@ -221,7 +221,7 @@ export const RekapPembayaranDoc = forwardRef<HTMLDivElement, RekapPembayaranDocP
               <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
                 <td style={{ padding: "3.5px 6px" }}>
                   <p style={{ fontWeight: 600, fontSize: "9px", margin: 0 }}>
-                    Total Nilai Transaksi #{order.nomor_nota} ({order.items?.length || 0} Iteman)
+                    Total Nilai Transaksi #{order.nomor_nota} ({order.items?.length || 0} item cetakan)
                   </p>
                   {order.items && order.items.length > 0 && (
                     <p style={{ fontSize: "8px", color: "#64748b", margin: "1px 0 0" }}>

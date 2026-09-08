@@ -175,7 +175,6 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
     // Initial 1 item
     if (products.length > 0) {
       const firstProd = products[0];
-      const isMeter = firstProd.satuan?.toLowerCase() === "meter" || firstProd.satuan?.toLowerCase() === "m2" || firstProd.nama_item?.toLowerCase().includes("meter") || firstProd.nama_item?.toLowerCase().includes("banner") || firstProd.nama_item?.toLowerCase().includes("spanduk");
       setFormItems([
         {
           product_id: firstProd.id,
@@ -184,11 +183,11 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
           satuan: firstProd.satuan,
           harga_satuan: firstProd.harga,
           catatan_item: "",
-          panjang: isMeter ? 1 : null,
-          lebar: isMeter ? 1 : null,
+          panjang: null,
+          lebar: null,
           dimensi_unit: "m",
           jumlah_lembar: 1,
-          hitung_dimensi: isMeter,
+          hitung_dimensi: false,
         },
       ]);
     } else {
@@ -200,11 +199,11 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
           satuan: "meter",
           harga_satuan: 85000,
           catatan_item: "",
-          panjang: 1,
-          lebar: 1,
+          panjang: null,
+          lebar: null,
           dimensi_unit: "m",
           jumlah_lembar: 1,
-          hitung_dimensi: true,
+          hitung_dimensi: false,
         },
       ]);
     }
@@ -227,19 +226,22 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
 
     if (order.items && order.items.length > 0) {
       setFormItems(
-        order.items.map((i) => ({
-          product_id: i.product_id || null,
-          nama_item: i.nama_item,
-          qty: i.qty,
-          satuan: i.satuan,
-          harga_satuan: i.harga_satuan,
-          catatan_item: i.catatan_item || "",
-          panjang: i.panjang !== undefined && i.panjang !== null ? Number(i.panjang) : null,
-          lebar: i.lebar !== undefined && i.lebar !== null ? Number(i.lebar) : null,
-          dimensi_unit: i.dimensi_unit || "m",
-          jumlah_lembar: i.jumlah_lembar ? Number(i.jumlah_lembar) : 1,
-          hitung_dimensi: i.hitung_dimensi !== undefined ? Boolean(i.hitung_dimensi) : Boolean(i.panjang && i.lebar),
-        }))
+        order.items.map((i) => {
+          const isHitungDim = Boolean(i.hitung_dimensi);
+          return {
+            product_id: i.product_id || null,
+            nama_item: i.nama_item,
+            qty: i.qty,
+            satuan: i.satuan,
+            harga_satuan: i.harga_satuan,
+            catatan_item: i.catatan_item || "",
+            panjang: isHitungDim && i.panjang !== undefined && i.panjang !== null ? Number(i.panjang) : null,
+            lebar: isHitungDim && i.lebar !== undefined && i.lebar !== null ? Number(i.lebar) : null,
+            dimensi_unit: i.dimensi_unit || "m",
+            jumlah_lembar: i.jumlah_lembar ? Number(i.jumlah_lembar) : 1,
+            hitung_dimensi: isHitungDim,
+          };
+        })
       );
     } else {
       setFormItems([
@@ -266,7 +268,6 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
   // Add Item in Order
   const handleAddItem = () => {
     const defaultProd = products[0];
-    const isMeter = defaultProd && (defaultProd.satuan?.toLowerCase() === "meter" || defaultProd.satuan?.toLowerCase() === "m2" || defaultProd.nama_item?.toLowerCase().includes("meter") || defaultProd.nama_item?.toLowerCase().includes("banner") || defaultProd.nama_item?.toLowerCase().includes("spanduk"));
     setFormItems([
       ...formItems,
       {
@@ -276,11 +277,11 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         satuan: defaultProd ? defaultProd.satuan : "pcs",
         harga_satuan: defaultProd ? defaultProd.harga : 0,
         catatan_item: "",
-        panjang: isMeter ? 1 : null,
-        lebar: isMeter ? 1 : null,
+        panjang: null,
+        lebar: null,
         dimensi_unit: "m",
         jumlah_lembar: 1,
-        hitung_dimensi: isMeter,
+        hitung_dimensi: false,
       },
     ]);
   };
@@ -309,14 +310,18 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         updated[index].satuan = prod.satuan;
         updated[index].harga_satuan = prod.harga;
 
-        const isMeter = prod.satuan?.toLowerCase() === "meter" || prod.satuan?.toLowerCase() === "m2" || prod.nama_item?.toLowerCase().includes("meter") || prod.nama_item?.toLowerCase().includes("banner") || prod.nama_item?.toLowerCase().includes("spanduk");
-        if (isMeter) {
-          updated[index].hitung_dimensi = true;
+        // If hitung_dimensi is currently active on this row, recalculate volume
+        if (updated[index].hitung_dimensi) {
           if (!updated[index].dimensi_unit) updated[index].dimensi_unit = "m";
           if (!updated[index].panjang) updated[index].panjang = 1;
           if (!updated[index].lebar) updated[index].lebar = 1;
           if (!updated[index].jumlah_lembar) updated[index].jumlah_lembar = 1;
-          const { totalVolume } = calculateItemDimension(updated[index].panjang, updated[index].lebar, updated[index].dimensi_unit, updated[index].jumlah_lembar);
+          const { totalVolume } = calculateItemDimension(
+            updated[index].panjang,
+            updated[index].lebar,
+            updated[index].dimensi_unit,
+            updated[index].jumlah_lembar
+          );
           updated[index].qty = totalVolume > 0 ? totalVolume : 1;
         }
       }
@@ -340,14 +345,24 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
     (current as any)[field] = value;
 
     if (field === "hitung_dimensi") {
+      current.hitung_dimensi = Boolean(value);
       if (value) {
         if (!current.panjang) current.panjang = 1;
         if (!current.lebar) current.lebar = 1;
         if (!current.dimensi_unit) current.dimensi_unit = "m";
         if (!current.jumlah_lembar) current.jumlah_lembar = 1;
         if (current.satuan === "pcs") current.satuan = "meter";
-        const { totalVolume } = calculateItemDimension(current.panjang, current.lebar, current.dimensi_unit, current.jumlah_lembar);
+        const { totalVolume } = calculateItemDimension(
+          current.panjang,
+          current.lebar,
+          current.dimensi_unit,
+          current.jumlah_lembar
+        );
         current.qty = totalVolume > 0 ? totalVolume : 1;
+      } else {
+        // Toggled OFF: Clear panjang & lebar so size note is completely removed
+        current.panjang = null;
+        current.lebar = null;
       }
     } else {
       if (current.hitung_dimensi) {
@@ -405,6 +420,17 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
       setSaving(true);
       setFormError(null);
 
+      // Clean item dimensions: if hitung_dimensi is off, force panjang and lebar to null
+      const sanitizedItems = formItems.map((item) => {
+        const isDim = Boolean(item.hitung_dimensi);
+        return {
+          ...item,
+          panjang: isDim && item.panjang ? Number(item.panjang) : null,
+          lebar: isDim && item.lebar ? Number(item.lebar) : null,
+          hitung_dimensi: isDim,
+        };
+      });
+
       const payload = {
         nama_pelanggan: formCustomerName,
         no_wa: formCustomerPhone,
@@ -415,7 +441,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         jumlah_dp: Number(formJumlahDp) || 0,
         catatan: formCatatan,
         diskon: Number(formDiskon) || 0,
-        items: formItems,
+        items: sanitizedItems,
       };
 
       if (editingOrder) {
@@ -624,12 +650,12 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
               <tr>
                 <th className="py-2.5 pl-3 pr-1.5 w-[115px]">No. Nota</th>
                 <th className="py-2.5 px-1.5 w-[140px]">Pelanggan</th>
-                <th className="py-2.5 px-1.5 w-[105px]">Tanggal / Ambil</th>
-                <th className="py-2.5 px-1.5 min-w-[140px]">Item</th>
+                <th className="py-2.5 px-1.5 w-[115px]">Tanggal / Ambil</th>
+                <th className="py-2.5 px-1.5 min-w-[200px]">Item</th>
                 <th className="py-2.5 px-1.5 w-[90px]">Status Order</th>
                 <th className="py-2.5 px-1.5 w-[95px]">Status Bayar</th>
                 <th className="py-2.5 px-1.5 text-right w-[95px]">Total</th>
-                <th className="py-2.5 pl-1 pr-3 text-center w-[125px]">Aksi</th>
+                <th className="py-2.5 pl-1 pr-3 text-center w-[150px]">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -652,24 +678,26 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                         <span className="text-[10px] text-zinc-400 block leading-tight mt-0.5">{order.created_by || "Admin"}</span>
                       </td>
 
-                      <td className="py-2.5 px-1.5 align-top">
+                      <td className="py-2.5 px-1.5 align-top w-[140px]">
                         <p className="font-bold text-zinc-900 dark:text-white text-[11px] truncate leading-tight">{order.nama_pelanggan}</p>
                         <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-[10px] text-zinc-500 font-mono truncate">{order.no_wa}</span>
-                          <a
-                            href={waNoticeLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-emerald-600 hover:text-emerald-500 shrink-0"
-                            title="Chat WA Pelanggan"
-                          >
-                            <MessageCircle className="w-3 h-3" />
-                          </a>
+                          <span className="text-[10px] text-zinc-500 font-mono truncate">{order.no_wa || "-"}</span>
+                          {order.no_wa && (
+                            <a
+                              href={waNoticeLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-emerald-600 hover:text-emerald-500 shrink-0"
+                              title="Chat WA Pelanggan"
+                            >
+                              <MessageCircle className="w-3 h-3" />
+                            </a>
+                          )}
                         </div>
                       </td>
 
-                      <td className="py-2.5 px-1.5 align-top text-zinc-600 dark:text-zinc-400">
-                        <p className="text-[10.5px] leading-tight">{formatTanggal(order.tanggal_order)}</p>
+                      <td className="py-2.5 px-1.5 align-top text-zinc-600 dark:text-zinc-400 w-[115px]">
+                        <p className="text-[10.5px] leading-tight font-medium">{formatTanggal(order.tanggal_order)}</p>
                         {order.tanggal_ambil && (
                           <p className="text-[9.5px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-0.5 mt-0.5 leading-tight">
                             <Clock className="w-2.5 h-2.5 shrink-0" />
@@ -678,26 +706,29 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                         )}
                       </td>
 
-                      <td className="py-2.5 px-1.5 align-top max-w-[180px]">
+                      <td className="py-2.5 px-1.5 align-top min-w-[200px]">
                         {order.items && order.items.length > 0 ? (
-                          <div className="space-y-0.5">
-                            {order.items.slice(0, 2).map((item, idx) => (
-                              <div key={idx} className="flex items-center gap-1 min-w-0">
-                                <span className="truncate text-zinc-700 dark:text-zinc-300 text-[10.5px] leading-tight">
+                          <div className="space-y-1">
+                            {order.items.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="text-zinc-700 dark:text-zinc-300 text-[10.5px] leading-snug"
+                              >
+                                <span>
                                   • {item.qty} {item.satuan} {item.nama_item}
                                 </span>
-                                {item.panjang && item.lebar ? (
-                                  <span className="shrink-0 inline-block px-1 py-0.2 text-[9px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold rounded border border-indigo-200 dark:border-indigo-800">
+                                {item.hitung_dimensi && item.panjang && item.lebar ? (
+                                  <span className="inline-block ml-1 px-1 py-0.2 text-[9px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold rounded border border-indigo-200 dark:border-indigo-800">
                                     {item.panjang}{item.dimensi_unit || "m"}×{item.lebar}{item.dimensi_unit || "m"}{item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar}lbr)` : ""}
+                                  </span>
+                                ) : null}
+                                {item.catatan_item ? (
+                                  <span className="text-[9.5px] text-zinc-400 dark:text-zinc-500 italic block pl-2 leading-tight">
+                                    ({item.catatan_item})
                                   </span>
                                 ) : null}
                               </div>
                             ))}
-                            {order.items.length > 2 && (
-                              <span className="text-[9.5px] text-zinc-400 italic block leading-tight">
-                                +{order.items.length - 2} item lainnya
-                              </span>
-                            )}
                           </div>
                         ) : (
                           <span className="text-zinc-400 text-[10.5px]">-</span>
@@ -908,7 +939,14 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                           </span>
                           {order.items.map((item, idx) => (
                             <div key={idx} className="flex justify-between text-slate-700 dark:text-slate-300 text-[11px]">
-                              <span>• {item.qty} {item.satuan} {item.nama_item}</span>
+                              <span>
+                                • {item.qty} {item.satuan} {item.nama_item}
+                                {item.hitung_dimensi && item.panjang && item.lebar ? (
+                                  <span className="inline-block ml-1 px-1 py-0.2 text-[9px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold rounded border border-indigo-200 dark:border-indigo-800">
+                                    {item.panjang}{item.dimensi_unit || "m"}×{item.lebar}{item.dimensi_unit || "m"}{item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar}lbr)` : ""}
+                                  </span>
+                                ) : null}
+                              </span>
                               <span className="font-mono text-slate-500">{formatRupiah(item.subtotal)}</span>
                             </div>
                           ))}

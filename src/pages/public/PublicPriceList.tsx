@@ -150,7 +150,7 @@ export const PublicPriceList: React.FC<PublicPriceListProps> = ({
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Cari Item (mis: stiker, dtf, jersey)..."
+              placeholder="Cari item cetak (mis: stiker, dtf, jersey)..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"

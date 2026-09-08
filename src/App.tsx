@@ -35,16 +35,19 @@ function getInitialTrackRoute(): { isTrack: boolean; token: string | null } {
   const hash = window.location.hash;
   const search = new URLSearchParams(window.location.search);
 
+  // Check /track/:token
   const pathMatch = path.match(/^\/track\/([a-zA-Z0-9_-]+)/);
   if (pathMatch) {
     return { isTrack: true, token: pathMatch[1] };
   }
 
+  // Check hash #/track/:token or #track/:token
   const hashMatch = hash.match(/^#\/?track\/([a-zA-Z0-9_-]+)/);
   if (hashMatch) {
     return { isTrack: true, token: hashMatch[1] };
   }
 
+  // Check search params ?track=:token
   if (search.get("track")) {
     return { isTrack: true, token: search.get("track") };
   }
@@ -57,6 +60,7 @@ function getInitialPrintRoute(): { isPrint: boolean; docType: DocumentType; orde
   const hash = window.location.hash;
   const search = new URLSearchParams(window.location.search);
 
+  // Check /print/:docType/:orderId
   const pathMatch = path.match(/^\/print\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)/);
   if (pathMatch) {
     let dt = pathMatch[1] as DocumentType;
@@ -64,6 +68,7 @@ function getInitialPrintRoute(): { isPrint: boolean; docType: DocumentType; orde
     return { isPrint: true, docType: dt, orderId: pathMatch[2] };
   }
 
+  // Check hash #/print/:docType/:orderId
   const hashMatch = hash.match(/^#\/print\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)/);
   if (hashMatch) {
     let dt = hashMatch[1] as DocumentType;
@@ -71,6 +76,7 @@ function getInitialPrintRoute(): { isPrint: boolean; docType: DocumentType; orde
     return { isPrint: true, docType: dt, orderId: hashMatch[2] };
   }
 
+  // Check search params ?print=nota&id=123
   if (search.get("print")) {
     let dt = (search.get("print") || "nota") as DocumentType;
     if (dt === ("rekap" as any)) dt = "rekap-pembayaran";
@@ -78,28 +84,6 @@ function getInitialPrintRoute(): { isPrint: boolean; docType: DocumentType; orde
   }
 
   return { isPrint: false, docType: "nota", orderId: null };
-}
-
-// ⬅ CHANGED: new helper to detect /admin or /admin/:tab in the URL
-const VALID_ADMIN_TABS = [
-  "dashboard",
-  "orders",
-  "products",
-  "calculator",
-  "vendors",
-  "finance",
-  "settings",
-  "guides",
-];
-
-function getInitialAdminRoute(): { isAdmin: boolean; tab: string } {
-  const path = window.location.pathname;
-  const match = path.match(/^\/admin\/?([a-zA-Z0-9_-]*)/);
-  if (match) {
-    const tab = match[1] && VALID_ADMIN_TABS.includes(match[1]) ? match[1] : "dashboard";
-    return { isAdmin: true, tab };
-  }
-  return { isAdmin: false, tab: "dashboard" };
 }
 
 function MainApp() {
@@ -110,18 +94,13 @@ function MainApp() {
   // Track route state for public order tracking (/track/:token)
   const [trackRoute, setTrackRoute] = useState(getInitialTrackRoute);
 
-  // ⬅ CHANGED: read initial admin route from the URL instead of hardcoding "public"
-  const initialAdminRoute = getInitialAdminRoute();
-
   // Navigation state
   // 'public' or 'admin'
-  const [viewScope, setViewScope] = useState<"public" | "admin">(
-    initialAdminRoute.isAdmin ? "admin" : "public"
-  );
+  const [viewScope, setViewScope] = useState<"public" | "admin">("public");
   // Public tabs: 'beranda', 'pricelist', 'kontak'
   const [publicTab, setPublicTab] = useState<string>("beranda");
   // Admin tabs: 'dashboard', 'orders', 'products', 'vendors', 'settings'
-  const [adminTab, setAdminTabState] = useState<string>(initialAdminRoute.tab); // ⬅ CHANGED (was setAdminTab)
+  const [adminTab, setAdminTab] = useState<string>("dashboard");
 
   // Shared Data
   const [products, setProducts] = useState<Product[]>([]);
@@ -132,14 +111,6 @@ function MainApp() {
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem("jeres_theme") === "dark";
   });
-
-  // ⬅ CHANGED: wrapper that updates state AND keeps the URL in sync
-  const setAdminTab = (tab: string) => {
-    setAdminTabState(tab);
-    if (viewScope === "admin") {
-      window.history.pushState({}, "", `/admin/${tab}`);
-    }
-  };
 
   const handlePrintOrder = async (order: Order) => {
     try {
@@ -197,6 +168,7 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    // Dynamic favicon update based on uploaded custom logo
     const faviconLink = document.querySelector<HTMLLinkElement>("link[rel*='icon']");
     if (faviconLink) {
       if (settings?.logo_url) {
@@ -206,6 +178,7 @@ function MainApp() {
       }
     }
 
+    // Dynamic title update based on store name
     document.title = settings?.nama_toko || "Jeres Studio";
   }, [settings?.logo_url, settings?.nama_toko]);
 
@@ -215,34 +188,20 @@ function MainApp() {
     }
   }, [isAuthenticated]);
 
-  // ⬅ CHANGED: if not authenticated but URL says /admin/*, don't force back to dashboard tab;
-  // AdminLogin will render instead (handled below). Restrict staff from settings tab.
+  // Restrict staff from accessing settings tab directly
   useEffect(() => {
     if (user && user.role === "staff" && adminTab === "settings") {
       setAdminTab("dashboard");
     }
   }, [user, adminTab]);
 
-  // ⬅ CHANGED: once auth check finishes, if we're on /admin/* but NOT authenticated,
-  // make sure viewScope is "admin" so AdminLogin renders instead of the public site.
-  useEffect(() => {
-    if (!authLoading) {
-      const route = getInitialAdminRoute();
-      if (route.isAdmin && !isAuthenticated) {
-        setViewScope("admin");
-      }
-    }
-  }, [authLoading, isAuthenticated]);
-
   // Navigate handlers
   const handleOpenLogin = () => {
     setViewScope("admin");
-    window.history.pushState({}, "", `/admin/${adminTab}`); // ⬅ CHANGED
   };
 
   const handleBackToPublic = () => {
     setViewScope("public");
-    window.history.pushState({}, "", "/"); // ⬅ CHANGED
   };
 
   const handlePublicNavigate = (tab: string) => {
@@ -255,10 +214,6 @@ function MainApp() {
     const handleUrlChange = () => {
       setPrintRoute(getInitialPrintRoute());
       setTrackRoute(getInitialTrackRoute());
-      // ⬅ CHANGED: keep admin/public scope + tab in sync with browser back/forward
-      const adminRoute = getInitialAdminRoute();
-      setViewScope(adminRoute.isAdmin ? "admin" : "public");
-      setAdminTabState(adminRoute.tab);
     };
     window.addEventListener("popstate", handleUrlChange);
     window.addEventListener("hashchange", handleUrlChange);
@@ -358,8 +313,7 @@ function MainApp() {
                 onBackToPublic={handleBackToPublic}
                 onLoginSuccess={() => {
                   setViewScope("admin");
-                  setAdminTabState("dashboard");
-                  window.history.pushState({}, "", "/admin/dashboard"); // ⬅ CHANGED
+                  setAdminTab("dashboard");
                   refreshDeadlineAlerts();
                 }}
               />

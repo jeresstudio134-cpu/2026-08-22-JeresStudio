@@ -96,6 +96,30 @@ export const AdminProducts: React.FC = () => {
     { id: "lainnya", label: "Lainnya" },
   ], []);
 
+  const defaultSatuanList = useMemo(() => [
+    { id: "pcs", label: "Pcs (Satuan)" },
+    { id: "meter", label: "Meter (m² / lari)" },
+    { id: "lembar", label: "Lembar (A3 / A4)" },
+    { id: "lusin", label: "Lusin" },
+    { id: "paket", label: "Paket / Set" },
+  ], []);
+
+  const satuanList = useMemo(() => {
+    const list = [...defaultSatuanList];
+    const seen = new Set(defaultSatuanList.map((s) => s.id.toLowerCase()));
+    products.forEach((p) => {
+      if (p.satuan) {
+        const s = p.satuan.toLowerCase().trim();
+        if (!seen.has(s)) {
+          seen.add(s);
+          const label = p.satuan.charAt(0).toUpperCase() + p.satuan.slice(1);
+          list.push({ id: s, label });
+        }
+      }
+    });
+    return list;
+  }, [products, defaultSatuanList]);
+
   const categories = useMemo(() => {
     const list = [{ id: "all", label: "Semua Kategori" }];
     const seen = new Set<string>();
@@ -173,20 +197,12 @@ export const AdminProducts: React.FC = () => {
     setModalOpen(true);
   };
 
-  const defaultSatuanList = ["pcs", "meter", "lembar", "lusin", "paket"];
-
   const handleOpenEdit = (prod: Product) => {
     setEditingProduct(prod);
     setIsCustomCategory(false);
     setCustomCategoryName("");
-    const prodSatuan = (prod.satuan || "pcs").toLowerCase();
-    if (!defaultSatuanList.includes(prodSatuan)) {
-      setIsCustomSatuan(true);
-      setCustomSatuanName(prod.satuan || "");
-    } else {
-      setIsCustomSatuan(false);
-      setCustomSatuanName("");
-    }
+    setIsCustomSatuan(false);
+    setCustomSatuanName("");
     const existingImages = Array.isArray(prod.images) && prod.images.length > 0
       ? prod.images
       : (prod.gambar_url ? [prod.gambar_url] : []);
@@ -531,7 +547,7 @@ export const AdminProducts: React.FC = () => {
             Manajemen Price List & Produk
           </h2>
           <p className="text-xs text-slate-500">
-            Kelola katalog Item, multi-vendor supply, analisis margin profit, dan ketersediaan publik
+            Kelola katalog item cetak, multi-vendor supply, analisis margin profit, dan ketersediaan publik
           </p>
         </div>
 
@@ -1138,7 +1154,6 @@ export const AdminProducts: React.FC = () => {
                         setIsCustomSatuan(!isCustomSatuan);
                         if (isCustomSatuan) {
                           setCustomSatuanName("");
-                          setFormData({ ...formData, satuan: "pcs" });
                         }
                       }}
                       className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
@@ -1152,8 +1167,9 @@ export const AdminProducts: React.FC = () => {
                       type="text"
                       value={customSatuanName}
                       onChange={(e) => setCustomSatuanName(e.target.value)}
-                      placeholder="Ketik satuan baru (cth: sesi, jam, halaman)"
+                      placeholder="Ketik satuan baru (cth: Rim, Roll, Box, Kg, Buku)"
                       className="w-full px-3 py-2 rounded-lg bg-indigo-50/50 dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                      autoFocus
                     />
                   ) : (
                     <select
@@ -1168,11 +1184,11 @@ export const AdminProducts: React.FC = () => {
                       }}
                       className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500"
                     >
-                      <option value="pcs">Pcs (Satuan)</option>
-                      <option value="meter">Meter (m² / lari)</option>
-                      <option value="lembar">Lembar (A3 / A4)</option>
-                      <option value="lusin">Lusin</option>
-                      <option value="paket">Paket / Set</option>
+                      {satuanList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
                       <option value="__new__" className="text-indigo-600 dark:text-indigo-400 font-bold">
                         + Tambah Satuan Baru...
                       </option>

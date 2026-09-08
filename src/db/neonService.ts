@@ -1,9 +1,10 @@
+import "dotenv/config";
 import { neon } from "@neondatabase/serverless";
-import { memoryDb, MemoryStore } from "./index.js";
+import { memoryDb, MemoryStore, getCleanDatabaseUrl, connectNeonDatabase } from "./index.js";
 
 // Helper to get raw SQL query client from DATABASE_URL
 export function getNeonSql() {
-  const dbUrl = process.env.DATABASE_URL;
+  const dbUrl = getCleanDatabaseUrl();
   if (!dbUrl || !dbUrl.includes("postgres") || dbUrl.includes("sample")) {
     return null;
   }
@@ -70,13 +71,6 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
       );
     `;
 
-    // Ensure images column exists in products for older tables (migration for pre-existing DB)
-    try {
-      await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT;`;
-    } catch {
-      // Column may already exist
-    }
-
     // 3. orders
     await sql`
       CREATE TABLE IF NOT EXISTS orders (
@@ -122,24 +116,6 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
         hitung_dimensi BOOLEAN DEFAULT FALSE
       );
     `;
-
-    // Ensure dimension columns exist in order_items for older tables (migration for pre-existing DB)
-    try {
-      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS panjang NUMERIC;`;
-      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS lebar NUMERIC;`;
-      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS dimensi_unit VARCHAR(20) DEFAULT 'm';`;
-      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS jumlah_lembar INTEGER DEFAULT 1;`;
-      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS hitung_dimensi BOOLEAN DEFAULT FALSE;`;
-    } catch {
-      // Columns may already exist
-    }
-
-    // Ensure qty column supports decimal values (migration: old tables had qty as INTEGER)
-    try {
-      await sql`ALTER TABLE order_items ALTER COLUMN qty TYPE NUMERIC USING qty::NUMERIC;`;
-    } catch {
-      // Column may already be NUMERIC
-    }
 
     // 5. vendors
     await sql`
@@ -721,7 +697,7 @@ export async function ensureFreshFromNeon(
 
 // 4. Diagnostic Database Status
 export async function getDatabaseStatus(): Promise<DbStatusInfo> {
-  const dbUrl = process.env.DATABASE_URL || "";
+  const dbUrl = getCleanDatabaseUrl() || "";
   const isConfigured = Boolean(dbUrl && dbUrl.includes("postgres") && !dbUrl.includes("sample"));
 
   let hostName = "Belum Terkonfigurasi";
@@ -744,8 +720,8 @@ export async function getDatabaseStatus(): Promise<DbStatusInfo> {
       tables: [],
       lastChecked: new Date().toISOString(),
       error: isConfigured
-        ? "DATABASE_URL ada tetapi koneksi ke Neon gagal. Periksa format URL atau status serverless Neon."
-        : "DATABASE_URL belum diatur di Vercel Settings -> Environment Variables.",
+        ? "DATABASE_URL terisi tetapi koneksi ke Neon gagal. Periksa format URL atau status serverless Neon."
+        : "DATABASE_URL belum diatur di file .env atau Environment Variables.",
     };
   }
 
@@ -836,7 +812,6 @@ export async function persistOrder(order: any, items: any[]) {
   const sql = getNeonSql();
   if (!sql) return;
   try {
-    console.log("[DEBUG] Persisting order:", JSON.stringify({ id: order.id, no_wa: order.no_wa, jumlah_dp: order.jumlah_dp, diskon: order.diskon, subtotal: order.subtotal, total: order.total }));
     const progNotesStr = JSON.stringify(order.progress_notes || []);
     const tanggalOrder = order.tanggal_order ? new Date(order.tanggal_order) : new Date();
     const tanggalAmbil = order.tanggal_ambil ? new Date(order.tanggal_ambil) : null;
@@ -877,7 +852,6 @@ export async function persistOrder(order: any, items: any[]) {
     if (items && items.length > 0) {
       await sql`DELETE FROM order_items WHERE order_id = ${order.id}`;
       for (const item of items) {
-        console.log("[DEBUG] Inserting order_item:", JSON.stringify(item));
         await sql`
           INSERT INTO order_items (
             order_id, product_id, nama_item, qty, satuan, harga_satuan, 
@@ -885,7 +859,7 @@ export async function persistOrder(order: any, items: any[]) {
           ) VALUES (
             ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${item.qty || 1}, 
             ${item.satuan || 'pcs'}, ${item.harga_satuan || 0}, ${item.subtotal || 0}, 
-            ${item.catatan_item || ''}, ${(item.panjang !== "" && item.panjang != null && !isNaN(Number(item.panjang))) ? Number(item.panjang) : null}, ${(item.lebar !== "" && item.lebar != null && !isNaN(Number(item.lebar))) ? Number(item.lebar) : null}, 
+            ${item.catatan_item || ''}, ${item.panjang || null}, ${item.lebar || null}, 
             ${item.dimensi_unit || 'm'}, ${item.jumlah_lembar || 1}, ${item.hitung_dimensi || false}
           );
         `;

@@ -11,6 +11,15 @@
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/favicon.svg" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      try {
+        if (localStorage.getItem("jeres_theme") === "dark") {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

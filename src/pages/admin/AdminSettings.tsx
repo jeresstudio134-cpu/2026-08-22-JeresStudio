@@ -1131,7 +1131,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, onRefres
             Cadangkan Data Toko (JSON Backup)
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            Unduh salinan cadangan lengkap seluruh data toko Jeres Studio mencakup: Katalog Produk, Daftar Orderan & Iteman, Data Vendor, Riwayat Kulakan, dan Konfigurasi Toko dalam format JSON standar.
+            Unduh salinan cadangan lengkap seluruh data toko Jeres Studio mencakup: Katalog Produk, Daftar Orderan & Item Cetakan, Data Vendor, Riwayat Kulakan, dan Konfigurasi Toko dalam format JSON standar.
           </p>
 
           <div className="pt-2">

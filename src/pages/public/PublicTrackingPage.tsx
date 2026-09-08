@@ -475,7 +475,7 @@ export const PublicTrackingPage: React.FC<PublicTrackingPageProps> = ({ token, o
             <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <FileText className="w-4 h-4" />
             </div>
-            <h2 className="text-base font-bold text-slate-900">Rincian Iteman</h2>
+            <h2 className="text-base font-bold text-slate-900">Rincian Item Cetakan</h2>
           </div>
 
           <div className="divide-y divide-slate-100">

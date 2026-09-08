@@ -199,7 +199,7 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
               }}
             >
               <th style={{ padding: "4px 6px", width: "24px", textAlign: "center" }}>No</th>
-              <th style={{ padding: "4px 6px" }}>Iteman & Spesifikasi</th>
+              <th style={{ padding: "4px 6px" }}>Item Cetakan & Spesifikasi</th>
               <th style={{ padding: "4px 6px", width: "56px", textAlign: "center" }}>Qty</th>
               <th style={{ padding: "4px 6px", width: "80px", textAlign: "right" }}>Harga Satuan</th>
               <th style={{ padding: "4px 6px", width: "88px", textAlign: "right" }}>Subtotal</th>

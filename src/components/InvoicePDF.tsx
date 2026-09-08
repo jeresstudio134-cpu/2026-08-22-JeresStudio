@@ -205,13 +205,13 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
             {/* Items Table */}
             <div className="space-y-2">
               <span className="font-bold text-slate-900 dark:text-white block">
-                Daftar Iteman:
+                Daftar Item Cetakan:
               </span>
               <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-100 dark:bg-slate-800/80 text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                     <tr>
-                      <th className="py-2.5 px-3">Item</th>
+                      <th className="py-2.5 px-3">Item Cetak</th>
                       <th className="py-2.5 px-3 text-center">Qty</th>
                       <th className="py-2.5 px-3 text-right">Harga Satuan</th>
                       <th className="py-2.5 px-3 text-right">Subtotal</th>
@@ -226,7 +226,6 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                               <p className="font-semibold text-slate-900 dark:text-white">
                                 {item.nama_item}
                               </p>
-                              {/* ⬅ CHANGED: cek hitung_dimensi sebelum menampilkan badge ukuran */}
                               {item.hitung_dimensi && item.panjang && item.lebar ? (
                                 <span className="inline-flex items-center gap-0.5 text-[9.5px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
                                   📐 {item.panjang}{item.dimensi_unit || "m"} × {item.lebar}{item.dimensi_unit || "m"} ({item.jumlah_lembar || 1} lembar)
@@ -253,7 +252,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                     ) : (
                       <tr>
                         <td colSpan={4} className="py-4 text-center text-slate-400">
-                          Item: {formatRupiah(order.total)}
+                          Item Cetak: {formatRupiah(order.total)}
                         </td>
                       </tr>
                     )}

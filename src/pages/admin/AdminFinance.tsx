@@ -41,6 +41,7 @@ import {
   ArrowRightLeft,
   PiggyBank,
   Target,
+  Scale,
 } from "lucide-react";
 import { api } from "../../lib/api.js";
 import {
@@ -62,6 +63,7 @@ import { TransferKantongModal } from "../../components/TransferKantongModal.js";
 import { SavingsTargetModal } from "../../components/SavingsTargetModal.js";
 import { DepositTargetModal } from "../../components/DepositTargetModal.js";
 import { SavingsAngsuranSection } from "../../components/SavingsAngsuranSection.js";
+import { PrintLaporanKasModal, FilterInfo, FilterTotals } from "../../components/PrintLaporanKasModal.js";
 
 interface AdminFinanceProps {
   settings?: StoreSettings | null;
@@ -158,6 +160,9 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
 
   // Scanner Modal State
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
+
+  // Print Laporan Kas Modal State
+  const [printModalOpen, setPrintModalOpen] = useState(false);
 
   // Category Manager Modal State
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
@@ -682,9 +687,84 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     }
   };
 
-  // Export to CSV
+  // Filtered transactions for display
+  const uniqueKasirs = Array.from(new Set(transactions.map((t) => t.created_by || "Admin").filter(Boolean)));
+
+  const displayedTransactions = transactions.filter((tx) => {
+    if (kasirFilter !== "all" && (tx.created_by || "Admin") !== kasirFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  // Calculate real-time summary/totals of the filtered transactions
+  const filteredSummary: FilterTotals = useMemo(() => {
+    let masuk = 0;
+    let keluar = 0;
+    let countMasuk = 0;
+    let countKeluar = 0;
+
+    const perKantong: Record<KantongKasType, { masuk: number; keluar: number; saldo: number }> = {
+      modal: { masuk: 0, keluar: 0, saldo: 0 },
+      overhead: { masuk: 0, keluar: 0, saldo: 0 },
+      gaji_saya: { masuk: 0, keluar: 0, saldo: 0 },
+      gaji_karyawan: { masuk: 0, keluar: 0, saldo: 0 },
+      margin: { masuk: 0, keluar: 0, saldo: 0 },
+    };
+
+    for (const tx of displayedTransactions) {
+      const nom = Number(tx.nominal) || 0;
+      const k = (tx.kantong as KantongKasType) || "margin";
+      if (tx.tipe === "masuk") {
+        masuk += nom;
+        countMasuk++;
+        if (perKantong[k]) {
+          perKantong[k].masuk += nom;
+          perKantong[k].saldo += nom;
+        }
+      } else {
+        keluar += nom;
+        countKeluar++;
+        if (perKantong[k]) {
+          perKantong[k].keluar += nom;
+          perKantong[k].saldo -= nom;
+        }
+      }
+    }
+
+    return {
+      totalMasuk: masuk,
+      totalKeluar: keluar,
+      saldoBersih: masuk - keluar,
+      countMasuk,
+      countKeluar,
+      totalCount: displayedTransactions.length,
+      perKantong,
+    };
+  }, [displayedTransactions]);
+
+  // Current active filter metadata for report printing
+  const currentFilterInfo: FilterInfo = useMemo(
+    () => ({
+      type: typeFilter as "all" | "masuk" | "keluar",
+      kantong: kantongFilter,
+      category: categoryFilter,
+      kasir: kasirFilter,
+      dateRange: dateRangeFilter,
+      startDate: customStartDate,
+      endDate: customEndDate,
+      searchQuery: debouncedSearch,
+    }),
+    [typeFilter, kantongFilter, categoryFilter, kasirFilter, dateRangeFilter, customStartDate, customEndDate, debouncedSearch]
+  );
+
+  // Available categories based on modal form type
+  const availableFormCategories = formType === "masuk" ? incomeCategories : expenseCategories;
+
+  // Export filtered transactions to CSV
   const handleExportCSV = () => {
-    if (transactions.length === 0) {
+    const dataToExport = displayedTransactions.length > 0 ? displayedTransactions : transactions;
+    if (dataToExport.length === 0) {
       alert("Tidak ada transaksi untuk diekspor.");
       return;
     }
@@ -702,7 +782,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       "Referensi",
       "Dicatat Oleh",
     ];
-    const rows = transactions.map((t) => [
+    const rows = dataToExport.map((t) => [
       t.id,
       t.tipe === "masuk" ? "PEMASUKAN" : "PENGELUARAN",
       `"${KANTONG_CONFIG[t.kantong as KantongKasType]?.shortLabel || t.kantong || "General"}"`,
@@ -716,7 +796,7 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
       `"${t.created_by || "-"}"`,
     ]);
 
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFFsep=,\n" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -725,19 +805,6 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
     link.click();
     document.body.removeChild(link);
   };
-
-  // Available categories based on modal form type
-  const availableFormCategories = formType === "masuk" ? incomeCategories : expenseCategories;
-
-  // Filtered transactions for display
-  const uniqueKasirs = Array.from(new Set(transactions.map((t) => t.created_by || "Admin").filter(Boolean)));
-
-  const displayedTransactions = transactions.filter((tx) => {
-    if (kasirFilter !== "all" && (tx.created_by || "Admin") !== kasirFilter) {
-      return false;
-    }
-    return true;
-  });
 
   // Dynamic accurate balances computation with live fallback from transactions
   const balances: KantongBalances = useMemo(() => {
@@ -891,10 +958,20 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
           <button
             onClick={handleExportCSV}
             className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 shadow-xs cursor-pointer transition-colors whitespace-nowrap"
-            title="Download Spreadsheet CSV"
+            title="Download Spreadsheet CSV Sesuai Filter"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
             <span>Export CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPrintModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/60 shadow-xs cursor-pointer transition-all hover:scale-[1.02] whitespace-nowrap"
+            title="Cetak Laporan Lengkap Arus Kas Sesuai Filter"
+          >
+            <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Cetak Laporan</span>
           </button>
 
           <button
@@ -1461,21 +1538,154 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
             )}
           </div>
 
+          {/* TOTAL DARI FILTER & PRINT ACTION BANNER */}
+          <div className="bg-gradient-to-br from-slate-50 to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/30 p-3.5 sm:p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950/70 shadow-xs space-y-3">
+            {/* Banner Header: Title + Active Filter Badges + Print Button */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Total Hasil Filter</span>
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                      {filteredSummary.totalCount} Transaksi Terpilih
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Akumulasi nilai transaksi kas real-time sesuai opsi filter aktif
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons: Cetak Laporan & Export */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-xs transition-all hover:scale-[1.02] cursor-pointer"
+                  title="Cetak Laporan Lengkap Arus Kas Sesuai Filter"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Laporan</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Metrics 3-Column Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
+              {/* Total Kas Masuk */}
+              <div className="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-emerald-200/80 dark:border-emerald-950/60 shadow-2xs">
+                <div className="flex items-center justify-between text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-tight mb-1">
+                  <span className="flex items-center gap-1">
+                    <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                    Total Kas Masuk
+                  </span>
+                  <span className="font-mono text-[10px] font-normal px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                    {filteredSummary.countMasuk} Transaksi
+                  </span>
+                </div>
+                <div className="font-mono font-black text-sm sm:text-base text-emerald-600 dark:text-emerald-400 truncate">
+                  +{formatRupiah(filteredSummary.totalMasuk)}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  Pemasukan sesuai filter
+                </div>
+              </div>
+
+              {/* Total Kas Keluar */}
+              <div className="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-rose-200/80 dark:border-rose-950/60 shadow-2xs">
+                <div className="flex items-center justify-between text-[11px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-tight mb-1">
+                  <span className="flex items-center gap-1">
+                    <ArrowUpRight className="w-3.5 h-3.5 text-rose-600" />
+                    Total Kas Keluar
+                  </span>
+                  <span className="font-mono text-[10px] font-normal px-1.5 py-0.2 rounded bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300">
+                    {filteredSummary.countKeluar} Transaksi
+                  </span>
+                </div>
+                <div className="font-mono font-black text-sm sm:text-base text-rose-600 dark:text-rose-400 truncate">
+                  -{formatRupiah(filteredSummary.totalKeluar)}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  Pengeluaran sesuai filter
+                </div>
+              </div>
+
+              {/* Saldo Kas Bersih (Net) */}
+              <div
+                className={`bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border shadow-2xs ${
+                  filteredSummary.saldoBersih >= 0
+                    ? "border-indigo-200/80 dark:border-indigo-950/60"
+                    : "border-amber-200/80 dark:border-amber-950/60"
+                }`}
+              >
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight mb-1">
+                  <span className="flex items-center gap-1">
+                    <Scale className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    Saldo Kas Bersih
+                  </span>
+                  <span
+                    className={`font-mono text-[10px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                      filteredSummary.saldoBersih >= 0
+                        ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300"
+                        : "bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300"
+                    }`}
+                  >
+                    {filteredSummary.saldoBersih >= 0 ? "Surplus" : "Defisit"}
+                  </span>
+                </div>
+                <div
+                  className={`font-mono font-black text-sm sm:text-base truncate ${
+                    filteredSummary.saldoBersih >= 0
+                      ? "text-indigo-600 dark:text-indigo-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  {filteredSummary.saldoBersih >= 0 ? "+ " : ""}
+                  {formatRupiah(filteredSummary.saldoBersih)}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  Selisih kas masuk & keluar
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Minimalist Transaction History List Container */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
             {/* List Header */}
-            <div className="py-2.5 px-4 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
+            <div className="py-2.5 px-4 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-slate-700 dark:text-slate-300">
                   Riwayat Transaksi ({displayedTransactions.length})
                 </span>
+                {/* Total quick badge */}
+                {displayedTransactions.length > 0 && (
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[11px] font-mono border border-slate-200 dark:border-slate-700">
+                    <span className="text-emerald-600 font-bold">+{formatRupiah(filteredSummary.totalMasuk)}</span>
+                    <span className="text-slate-400">|</span>
+                    <span className="text-rose-600 font-bold">-{formatRupiah(filteredSummary.totalKeluar)}</span>
+                    <span className="text-slate-400">|</span>
+                    <span
+                      className={`font-bold ${
+                        filteredSummary.saldoBersih >= 0 ? "text-indigo-600 dark:text-indigo-400" : "text-rose-600"
+                      }`}
+                    >
+                      Net: {formatRupiah(filteredSummary.saldoBersih)}
+                    </span>
+                  </span>
+                )}
                 {kantongFilter !== "all" && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
                     Kantong {KANTONG_CONFIG[kantongFilter as KantongKasType]?.shortLabel}
                   </span>
                 )}
               </div>
-              <span className="text-[11px] text-slate-400">Klik baris untuk rincian</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 hidden md:inline">Klik baris untuk rincian</span>
+              </div>
             </div>
 
             {/* Rows with scroll container for 5 visible items */}
@@ -1756,6 +1966,33 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
                 </div>
               )}
             </div>
+
+            {/* List Footer Total Summary Bar */}
+            {displayedTransactions.length > 0 && (
+              <div className="p-3 px-4 bg-slate-50/90 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
+                <div className="flex items-center gap-2 sm:gap-4 flex-wrap text-[11px] font-mono">
+                  <span className="text-slate-500 dark:text-slate-400 font-sans font-medium">
+                    Total {displayedTransactions.length} Transaksi:
+                  </span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                    Masuk: +{formatRupiah(filteredSummary.totalMasuk)}
+                  </span>
+                  <span className="text-rose-600 dark:text-rose-400 font-bold">
+                    Keluar: -{formatRupiah(filteredSummary.totalKeluar)}
+                  </span>
+                  <span
+                    className={`font-bold ${
+                      filteredSummary.saldoBersih >= 0
+                        ? "text-indigo-600 dark:text-indigo-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }`}
+                  >
+                    Bersih: {filteredSummary.saldoBersih >= 0 ? "+ " : ""}
+                    {formatRupiah(filteredSummary.saldoBersih)}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2632,6 +2869,18 @@ export const AdminFinance: React.FC<AdminFinanceProps> = ({ settings }) => {
         }}
         target={depositTarget}
         kantongBalances={balances}
+      />
+
+      {/* Print Laporan Kas & Transaksi Modal */}
+      <PrintLaporanKasModal
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        transactions={displayedTransactions}
+        filterInfo={currentFilterInfo}
+        totals={filteredSummary}
+        settings={settings}
+        currentUser={user}
+        onExportCSV={handleExportCSV}
       />
     </div>
   );
