@@ -59,9 +59,46 @@ export function getPublicInvoiceUrl(order: Order): string {
  * Safe PDF Output Handler: Membuka halaman PDF di browser, BUKAN mendownload secara otomatis saat cetak
  */
 /**
- * Bungkus PDF Blob menjadi objek File dengan nama file yang sesuai (mis. nomor invoice)
- * sebelum membuat Object URL, agar tab/riwayat browser menampilkan nama dokumen
- * (contoh: "Invoice-INV-20260904-0001.pdf") alih-alih ID blob acak.
+ * Buat nama file standar sesuai permintaan: Nama Customer dan No Invoice
+ * Format: "[Nama Customer] - [No Invoice].pdf"
+ * Contoh: "SMA ALMUN - INV-20260910-0002.pdf" atau "B.SAHLA - INV-20260910-0002.pdf"
+ */
+export function buildDocumentFilename(
+  order: { nama_pelanggan?: string | null; nomor_nota?: string | null },
+  docType: "invoice" | "surat_jalan" | "tanda_terima" | "xls" | "csv" = "invoice"
+): string {
+  const rawCustomer = order.nama_pelanggan ? String(order.nama_pelanggan).trim() : "";
+  const cleanCustomer = rawCustomer
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || "Pelanggan";
+
+  const rawNota = order.nomor_nota ? String(order.nomor_nota).trim() : "INV";
+  const cleanNota = rawNota
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "")
+    .trim() || "INV";
+
+  const baseName = `${cleanCustomer} - ${cleanNota}`;
+
+  if (docType === "surat_jalan") {
+    return `${baseName} - Surat Jalan.pdf`;
+  }
+  if (docType === "tanda_terima") {
+    return `${baseName} - Tanda Terima.pdf`;
+  }
+  if (docType === "xls") {
+    return `${baseName}.xlsx`;
+  }
+  if (docType === "csv") {
+    return `${baseName}.csv`;
+  }
+  return `${baseName}.pdf`;
+}
+
+/**
+ * Bungkus PDF Blob menjadi objek File dengan nama file yang sesuai (mis. nama customer & nomor invoice)
+ * sebelum membuat Object URL.
  */
 function createNamedPdfBlobUrl(pdfBlob: Blob, filename: string): string {
   try {
@@ -71,6 +108,45 @@ function createNamedPdfBlobUrl(pdfBlob: Blob, filename: string): string {
     // Fallback untuk environment yang tidak mendukung konstruktor File
     return URL.createObjectURL(pdfBlob);
   }
+}
+
+/**
+ * Mendaftarkan PDF blob ke backend endpoint preview agar URL yang dibuka browser beralamat
+ * /api/pdf/view/:id/[Nama Customer - No Invoice].pdf dengan header Content-Disposition asli.
+ * Hal ini memastikan tombol Simpan (Floppy Disk) atau Ctrl+S pada PDF viewer Chrome/Edge
+ * otomatis mengusulkan nama file "[Nama Customer] - [No Invoice].pdf" (bukan UUID acak).
+ */
+export async function resolvePdfViewUrl(pdfBlob: Blob, filename: string): Promise<string> {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    const res = await fetch(`/api/pdf/preview?filename=${encodeURIComponent(filename)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/pdf",
+      },
+      body: pdfBlob,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.url) {
+        return data.url;
+      }
+    }
+  } catch (e) {
+    console.warn("Server PDF preview endpoint unavailable, fallback to blob URL:", e);
+  }
+
+  // Fallback: local blob URL
+  return createNamedPdfBlobUrl(pdfBlob, filename);
 }
 
 export function safeHandlePdfOutput(
@@ -547,11 +623,14 @@ export async function generateInvoicePDF(
     doc.setFont("helvetica", "italic");
     doc.text("Terima kasih atas kunjungan Anda", center, currentY, { align: "center" });
 
-    const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
-    const filename = options.filename || `Invoice-${sanitizedOrderNo}.pdf`;
-    doc.setProperties({ title: filename.replace(/\.pdf$/i, "") });
+    const filename = options.filename || buildDocumentFilename(order, "invoice");
+    doc.setProperties({
+      title: filename.replace(/\.pdf$/i, ""),
+      subject: `Invoice ${order.nomor_nota || ""}`,
+      author: storeName,
+    });
     const pdfBlob = doc.output("blob");
-    const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
+    const blobUrl = await resolvePdfViewUrl(pdfBlob, filename);
 
     safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
@@ -1062,11 +1141,14 @@ export async function generateInvoicePDF(
     { align: "center" }
   );
 
-  const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
-  const filename = options.filename || `Invoice-${sanitizedOrderNo}.pdf`;
-  doc.setProperties({ title: filename.replace(/\.pdf$/i, "") });
+  const filename = options.filename || buildDocumentFilename(order, "invoice");
+  doc.setProperties({
+    title: filename.replace(/\.pdf$/i, ""),
+    subject: `Invoice ${order.nomor_nota || ""}`,
+    author: storeName,
+  });
   const pdfBlob = doc.output("blob");
-  const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
+  const blobUrl = await resolvePdfViewUrl(pdfBlob, filename);
 
   safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
@@ -1301,10 +1383,14 @@ export async function generateSuratJalanPDF(
     doc.text(r.label, x, sigY + (23 * scale), { align: "center" });
   });
 
-  const filename = options.filename || `SuratJalan-${order.nomor_nota}.pdf`;
-  doc.setProperties({ title: filename.replace(/\.pdf$/i, "") });
+  const filename = options.filename || buildDocumentFilename(order, "surat_jalan");
+  doc.setProperties({
+    title: filename.replace(/\.pdf$/i, ""),
+    subject: `Surat Jalan ${order.nomor_nota || ""}`,
+    author: storeName,
+  });
   const pdfBlob = doc.output("blob");
-  const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
+  const blobUrl = await resolvePdfViewUrl(pdfBlob, filename);
 
   safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
@@ -1518,10 +1604,14 @@ export async function generateTandaTerimaPDF(
   doc.text(`( ${storeName} )`, leftX, sigY + (23 * scale), { align: "center" });
   doc.text(`( ${order.nama_pelanggan} )`, rightX, sigY + (23 * scale), { align: "center" });
 
-  const filename = options.filename || `TandaTerima-${order.nomor_nota}.pdf`;
-  doc.setProperties({ title: filename.replace(/\.pdf$/i, "") });
+  const filename = options.filename || buildDocumentFilename(order, "tanda_terima");
+  doc.setProperties({
+    title: filename.replace(/\.pdf$/i, ""),
+    subject: `Tanda Terima ${order.nomor_nota || ""}`,
+    author: storeName,
+  });
   const pdfBlob = doc.output("blob");
-  const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
+  const blobUrl = await resolvePdfViewUrl(pdfBlob, filename);
 
   safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
@@ -1588,8 +1678,8 @@ export function exportInvoiceToXLS(order: Order, settings?: StoreSettings | null
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Invoice");
 
-  const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
-  XLSX.writeFile(wb, `Invoice-${sanitizedOrderNo}.xlsx`);
+  const filename = buildDocumentFilename(order, "xls");
+  XLSX.writeFile(wb, filename);
 }
 
 // =========================================================================
@@ -1637,9 +1727,9 @@ export function exportInvoiceToCSV(order: Order, settings?: StoreSettings | null
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const sanitizedOrderNo = (order.nomor_nota || "INV").replace(/[^a-zA-Z0-9_-]/g, "-");
+  const filename = buildDocumentFilename(order, "csv");
   a.href = url;
-  a.download = `Invoice-${sanitizedOrderNo}.csv`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
