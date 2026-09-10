@@ -739,13 +739,32 @@ app.patch("/api/products/:id/toggle", authenticateToken, async (req: Request, re
    ORDERS MANAGEMENT ROUTES (CRUD + INVOICE)
 ======================================================== */
 
-// Auto-generate invoice number format: INV-YYYYMMDD-XXXX
+// Auto-generate invoice number format: INV-YYYYMMDD-XXXX with guaranteed uniqueness
 function generateInvoiceNumber(): string {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const todayOrders = memoryDb.orders.filter((o) => o.nomor_nota.includes(`INV-${dateStr}`));
-  const nextSeq = String(todayOrders.length + 1).padStart(4, "0");
-  return `INV-${dateStr}-${nextSeq}`;
+  const prefix = `INV-${dateStr}-`;
+
+  let maxSeq = 0;
+  for (const o of (memoryDb.orders || [])) {
+    if (o && typeof o.nomor_nota === "string" && o.nomor_nota.startsWith(prefix)) {
+      const seqPart = o.nomor_nota.slice(prefix.length).trim();
+      const parsed = parseInt(seqPart, 10);
+      if (!isNaN(parsed) && parsed > maxSeq) {
+        maxSeq = parsed;
+      }
+    }
+  }
+
+  let nextSeq = maxSeq + 1;
+  let candidate = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  // Ensure absolute uniqueness across all orders in memoryDb
+  while ((memoryDb.orders || []).some((o: any) => o?.nomor_nota === candidate)) {
+    nextSeq++;
+    candidate = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  }
+
+  return candidate;
 }
 
 // Helper to automatically record order payments into cash ledger (Pemasukan Toko)
@@ -892,10 +911,11 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
     items,
   } = req.body;
 
-  if (!nama_pelanggan || !no_wa) {
-    res.status(400).json({ error: "Nama pelanggan dan No. WhatsApp wajib diisi." });
+  if (!nama_pelanggan || !nama_pelanggan.trim()) {
+    res.status(400).json({ error: "Nama pelanggan wajib diisi." });
     return;
   }
+  const cleanPhone = (no_wa && typeof no_wa === "string" && no_wa.trim()) ? no_wa.trim() : "-";
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: "Order harus memiliki minimal 1 item cetakan." });
@@ -914,15 +934,27 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
   const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
   const invoiceNumber = generateInvoiceNumber();
 
-  const newOrderId = memoryDb.orders.length ? Math.max(...memoryDb.orders.map((o) => o.id)) + 1 : 1;
+  const maxOrderId = (memoryDb.orders || []).reduce((max: number, o: any) => {
+    const num = Number(o?.id);
+    return !isNaN(num) && num > max ? num : max;
+  }, 0);
+  const newOrderId = maxOrderId + 1;
+
+  let tanggalAmbilIso: string | null = null;
+  if (tanggal_ambil) {
+    const d = new Date(tanggal_ambil);
+    if (!isNaN(d.getTime())) {
+      tanggalAmbilIso = d.toISOString();
+    }
+  }
 
   const newOrder = {
     id: newOrderId,
     nomor_nota: invoiceNumber,
     nama_pelanggan: nama_pelanggan.trim(),
-    no_wa: no_wa.trim(),
+    no_wa: cleanPhone,
     tanggal_order: new Date().toISOString(),
-    tanggal_ambil: tanggal_ambil ? new Date(tanggal_ambil).toISOString() : null,
+    tanggal_ambil: tanggalAmbilIso,
     status: status || "pending",
     metode_bayar: metode_bayar || "Cash",
     status_bayar: status_bayar || "belum",
@@ -948,7 +980,10 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
   memoryDb.orders.push(newOrder);
 
   // Insert items
-  let nextItemId = memoryDb.orderItems.length ? Math.max(...memoryDb.orderItems.map((i) => i.id)) + 1 : 1;
+  let nextItemId = (memoryDb.orderItems || []).reduce((max: number, it: any) => {
+    const num = Number(it?.id);
+    return !isNaN(num) && num > max ? num : max;
+  }, 0) + 1;
   const savedItems = items.map((it: any) => {
     const isDim = Boolean(it.hitung_dimensi);
     const itQty = Number(it.qty) || 1;
