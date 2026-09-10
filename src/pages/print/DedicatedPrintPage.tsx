@@ -90,12 +90,19 @@ export function DedicatedPrintPage({
     fetchData();
   }, [orderId]);
 
-  // Update document title for easy browser saving
+  // Update document title for easy browser saving (Format: Nama Customer - No Invoice)
   useEffect(() => {
     if (order) {
-      const sanitizedDoc = currentConfig.shortTitle.replace(/[^a-zA-Z0-9]/g, "");
-      const sanitizedOrder = (order.nomor_nota || "Order").replace(/[^a-zA-Z0-9_-]/g, "-");
-      document.title = `${sanitizedDoc}-${sanitizedOrder}`;
+      const cleanCustomer = (order.nama_pelanggan || "Pelanggan")
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "Pelanggan";
+      const cleanNota = (order.nomor_nota || "INV")
+        .replace(/[\\/:*?"<>|]+/g, "-")
+        .replace(/\s+/g, "")
+        .trim() || "INV";
+      const suffix = docType === "faktur" ? "" : ` - ${currentConfig.shortTitle}`;
+      document.title = `${cleanCustomer} - ${cleanNota}${suffix}`;
     }
   }, [docType, order, currentConfig]);
 
