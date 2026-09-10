@@ -877,6 +877,7 @@ app.get("/api/orders/:id", authenticateToken, async (req: Request, res: Response
 
 // Create Order
 app.post("/api/orders", authenticateToken, async (req: Request, res: Response) => {
+  await ensureFreshFromNeon("orders");
   const currentUser = (req as any).user;
   const {
     nama_pelanggan,
@@ -901,12 +902,15 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
     return;
   }
 
-  const calculatedSubtotal = items.reduce((sum: number, item: any) => {
-    const itemSub = Number(item.qty || 1) * Number(item.harga_satuan || 0);
-    return sum + itemSub;
-  }, 0);
+  const calculatedSubtotal = Math.round(
+    items.reduce((sum: number, item: any) => {
+      const itemQty = Number(item.qty) || 1;
+      const itemHarga = Math.round(Number(item.harga_satuan) || 0);
+      return sum + Math.round(itemQty * itemHarga);
+    }, 0)
+  );
 
-  const discountAmount = Number(diskon) || 0;
+  const discountAmount = Math.round(Number(diskon) || 0);
   const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
   const invoiceNumber = generateInvoiceNumber();
 
@@ -922,7 +926,7 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
     status: status || "pending",
     metode_bayar: metode_bayar || "Cash",
     status_bayar: status_bayar || "belum",
-    jumlah_dp: Number(jumlah_dp) || 0,
+    jumlah_dp: Math.round(Number(jumlah_dp) || 0),
     catatan: catatan || "",
     subtotal: calculatedSubtotal,
     diskon: discountAmount,
@@ -947,19 +951,21 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
   let nextItemId = memoryDb.orderItems.length ? Math.max(...memoryDb.orderItems.map((i) => i.id)) + 1 : 1;
   const savedItems = items.map((it: any) => {
     const isDim = Boolean(it.hitung_dimensi);
+    const itQty = Number(it.qty) || 1;
+    const itHarga = Math.round(Number(it.harga_satuan) || 0);
     const itemRecord = {
       id: nextItemId++,
       order_id: newOrderId,
       product_id: it.product_id ? Number(it.product_id) : null,
       nama_item: it.nama_item.trim(),
-      qty: Number(it.qty) || 1,
+      qty: itQty,
       satuan: it.satuan || "pcs",
-      harga_satuan: Number(it.harga_satuan) || 0,
-      subtotal: (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0),
-      panjang: isDim && it.panjang !== undefined && it.panjang !== null ? Number(it.panjang) : null,
-      lebar: isDim && it.lebar !== undefined && it.lebar !== null ? Number(it.lebar) : null,
+      harga_satuan: itHarga,
+      subtotal: Math.round(itQty * itHarga),
+      panjang: isDim && it.panjang !== undefined && it.panjang !== null && it.panjang !== "" ? Number(it.panjang) : null,
+      lebar: isDim && it.lebar !== undefined && it.lebar !== null && it.lebar !== "" ? Number(it.lebar) : null,
       dimensi_unit: it.dimensi_unit || "m",
-      jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
+      jumlah_lembar: it.jumlah_lembar ? Math.round(Number(it.jumlah_lembar)) : 1,
       hitung_dimensi: isDim,
       catatan_item: it.catatan_item || "",
     };
@@ -1011,6 +1017,7 @@ app.post("/api/orders", authenticateToken, async (req: Request, res: Response) =
 
 // Update Order
 app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
+  await ensureFreshFromNeon("orders");
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const orderIndex = memoryDb.orders.findIndex((o) => o.id === id);
@@ -1037,14 +1044,18 @@ app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response
     items,
   } = req.body;
 
-  let calculatedSubtotal = memoryDb.orders[orderIndex].subtotal;
-  let discountAmount = diskon !== undefined ? Number(diskon) : memoryDb.orders[orderIndex].diskon;
+  let calculatedSubtotal = Math.round(Number(memoryDb.orders[orderIndex].subtotal) || 0);
+  let discountAmount = diskon !== undefined ? Math.round(Number(diskon) || 0) : Math.round(Number(memoryDb.orders[orderIndex].diskon) || 0);
 
   // If new items provided, replace items
   if (items && Array.isArray(items)) {
-    calculatedSubtotal = items.reduce((sum: number, item: any) => {
-      return sum + Number(item.qty || 1) * Number(item.harga_satuan || 0);
-    }, 0);
+    calculatedSubtotal = Math.round(
+      items.reduce((sum: number, item: any) => {
+        const itemQty = Number(item.qty) || 1;
+        const itemHarga = Math.round(Number(item.harga_satuan) || 0);
+        return sum + Math.round(itemQty * itemHarga);
+      }, 0)
+    );
 
     // Delete old items
     memoryDb.orderItems = memoryDb.orderItems.filter((i) => i.order_id !== id);
@@ -1053,19 +1064,21 @@ app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response
     let nextItemId = memoryDb.orderItems.length ? Math.max(...memoryDb.orderItems.map((i) => i.id)) + 1 : 1;
     items.forEach((it: any) => {
       const isDim = Boolean(it.hitung_dimensi);
+      const itQty = Number(it.qty) || 1;
+      const itHarga = Math.round(Number(it.harga_satuan) || 0);
       memoryDb.orderItems.push({
         id: nextItemId++,
         order_id: id,
         product_id: it.product_id ? Number(it.product_id) : null,
         nama_item: it.nama_item.trim(),
-        qty: Number(it.qty) || 1,
+        qty: itQty,
         satuan: it.satuan || "pcs",
-        harga_satuan: Number(it.harga_satuan) || 0,
-        subtotal: (Number(it.qty) || 1) * (Number(it.harga_satuan) || 0),
-        panjang: isDim && it.panjang !== undefined && it.panjang !== null ? Number(it.panjang) : null,
-        lebar: isDim && it.lebar !== undefined && it.lebar !== null ? Number(it.lebar) : null,
+        harga_satuan: itHarga,
+        subtotal: Math.round(itQty * itHarga),
+        panjang: isDim && it.panjang !== undefined && it.panjang !== null && it.panjang !== "" ? Number(it.panjang) : null,
+        lebar: isDim && it.lebar !== undefined && it.lebar !== null && it.lebar !== "" ? Number(it.lebar) : null,
         dimensi_unit: it.dimensi_unit || "m",
-        jumlah_lembar: it.jumlah_lembar ? Number(it.jumlah_lembar) : 1,
+        jumlah_lembar: it.jumlah_lembar ? Math.round(Number(it.jumlah_lembar)) : 1,
         hitung_dimensi: isDim,
         catatan_item: it.catatan_item || "",
       });
@@ -1074,7 +1087,7 @@ app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response
 
   const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
   const targetStatusBayar = status_bayar || oldStatusBayar;
-  const targetDp = jumlah_dp !== undefined ? Number(jumlah_dp) : oldDp;
+  const targetDp = jumlah_dp !== undefined ? Math.round(Number(jumlah_dp) || 0) : oldDp;
   const targetPaymentMethod = metode_bayar || oldOrder.metode_bayar || "Cash";
   const customerName = nama_pelanggan ? nama_pelanggan.trim() : oldOrder.nama_pelanggan;
 
@@ -1192,6 +1205,7 @@ app.put("/api/orders/:id", authenticateToken, async (req: Request, res: Response
 
 // Update Order Status only (Quick Status change)
 app.patch("/api/orders/:id/status", authenticateToken, async (req: Request, res: Response) => {
+  await ensureFreshFromNeon("orders");
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id);
@@ -1288,7 +1302,8 @@ app.patch("/api/orders/:id/status", authenticateToken, async (req: Request, res:
 });
 
 // Generate / Get Share Link Tracking for Order (Admin auth required)
-app.post("/api/orders/:id/share", authenticateToken, (req: Request, res: Response) => {
+app.post("/api/orders/:id/share", authenticateToken, async (req: Request, res: Response) => {
+  await ensureFreshFromNeon("orders");
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id);
 
@@ -1341,6 +1356,7 @@ app.post("/api/orders/:id/share", authenticateToken, (req: Request, res: Respons
 
 // Add Progress Note Milestone (Admin auth required)
 app.post("/api/orders/:id/progress-notes", authenticateToken, async (req: Request, res: Response) => {
+  await ensureFreshFromNeon("orders");
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const order = memoryDb.orders.find((o) => o.id === id);
@@ -1467,6 +1483,7 @@ app.get("/api/public/track/:token", async (req: Request, res: Response) => {
 
 // Delete Order
 app.delete("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
+  await ensureFreshFromNeon("orders");
   const currentUser = (req as any).user;
   const id = Number(req.params.id);
   const index = memoryDb.orders.findIndex((o) => o.id === id);
