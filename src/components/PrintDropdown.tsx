@@ -5,6 +5,7 @@ import {
   generateInvoicePDF,
   generateSuratJalanPDF,
   generateTandaTerimaPDF,
+  openDocPdfInBrowser,
   exportInvoiceToXLS,
   exportInvoiceToCSV,
   getUserPaperPreference,
@@ -132,13 +133,13 @@ export const PrintDropdown: React.FC<PrintDropdownProps> = ({
         setPreviewModalOpen(true);
       } else if (actionType === "faktur") {
         setLoadingAction("faktur");
-        await generateInvoicePDF(order, settings, { action: "open" });
+        await openDocPdfInBrowser("faktur", order, settings);
       } else if (actionType === "surat_jalan") {
         setLoadingAction("surat_jalan");
-        await generateSuratJalanPDF(order, settings, { action: "open" });
+        await openDocPdfInBrowser("surat_jalan", order, settings);
       } else if (actionType === "tanda_terima") {
         setLoadingAction("tanda_terima");
-        await generateTandaTerimaPDF(order, settings, { action: "open" });
+        await openDocPdfInBrowser("tanda_terima", order, settings);
       } else if (actionType === "xls") {
         setLoadingAction("xls");
         exportInvoiceToXLS(order, settings);
@@ -202,7 +203,13 @@ export const PrintDropdown: React.FC<PrintDropdownProps> = ({
                 <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 <span>Faktur Penjualan</span>
               </div>
-              {loadingAction === "faktur" && <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />}
+              {loadingAction === "faktur" ? (
+                <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+              ) : (
+                <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/60">
+                  PDF
+                </span>
+              )}
             </button>
 
             <button
@@ -214,7 +221,13 @@ export const PrintDropdown: React.FC<PrintDropdownProps> = ({
                 <Truck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>Surat Jalan</span>
               </div>
-              {loadingAction === "surat_jalan" && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+              {loadingAction === "surat_jalan" ? (
+                <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
+              ) : (
+                <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">
+                  PDF
+                </span>
+              )}
             </button>
 
             <button
@@ -226,7 +239,13 @@ export const PrintDropdown: React.FC<PrintDropdownProps> = ({
                 <CheckSquare className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                 <span>Tanda Terima Dokumen</span>
               </div>
-              {loadingAction === "tanda_terima" && <Loader2 className="w-3 h-3 animate-spin text-sky-600" />}
+              {loadingAction === "tanda_terima" ? (
+                <Loader2 className="w-3 h-3 animate-spin text-sky-600" />
+              ) : (
+                <span className="text-[9px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/60 px-1.5 py-0.5 rounded border border-sky-200 dark:border-sky-800/60">
+                  PDF
+                </span>
+              )}
             </button>
 
             <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
