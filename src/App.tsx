@@ -27,8 +27,9 @@ import { AdminGuides } from "./pages/admin/AdminGuides.js";
 import { DedicatedPrintPage } from "./pages/print/DedicatedPrintPage.js";
 import { DocumentType } from "./components/print/PrintDocumentRenderer.js";
 
-// PDF Generator
-import { downloadInvoicePdf } from "./lib/generateInvoicePdf.js";
+// PDF Generator & Browser Viewer
+import { openInvoicePdfInBrowser } from "./lib/generateInvoicePdf.js";
+import { PdfBrowserViewerModal } from "./components/PdfBrowserViewerModal.js";
 
 function getInitialTrackRoute(): { isTrack: boolean; token: string | null } {
   const path = window.location.pathname;
@@ -114,9 +115,9 @@ function MainApp() {
 
   const handlePrintOrder = async (order: Order) => {
     try {
-      await downloadInvoicePdf(order, settings);
+      await openInvoicePdfInBrowser(order, settings);
     } catch (err) {
-      console.error("Gagal generate PDF:", err);
+      console.error("Gagal membuka halaman PDF:", err);
     }
   };
 
@@ -365,6 +366,9 @@ function MainApp() {
           </>
         )}
       </div>
+
+      {/* Global In-App Browser PDF Viewer */}
+      <PdfBrowserViewerModal />
     </div>
   );
 }
