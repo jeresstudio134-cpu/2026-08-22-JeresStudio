@@ -224,6 +224,21 @@ export async function initNeonTables(): Promise<{ success: boolean; message: str
       // Column may already exist
     }
 
+    // Ensure order_items and orders have all columns for older tables
+    try {
+      await sql`ALTER TABLE order_items ALTER COLUMN qty TYPE NUMERIC;`;
+      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS panjang NUMERIC;`;
+      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS lebar NUMERIC;`;
+      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS dimensi_unit VARCHAR(20) DEFAULT 'm';`;
+      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS jumlah_lembar INTEGER DEFAULT 1;`;
+      await sql`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS hitung_dimensi BOOLEAN DEFAULT FALSE;`;
+      await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS progress_notes TEXT;`;
+      await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS share_token TEXT;`;
+      await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS share_expires_at TIMESTAMP;`;
+    } catch (e) {
+      // Columns may already exist
+    }
+
     // 12. store_settings
     await sql`
       CREATE TABLE IF NOT EXISTS store_settings (
@@ -446,14 +461,20 @@ export async function syncFromNeonToMemory(sql: any) {
     });
 
     const items = await sql`SELECT * FROM order_items ORDER BY id ASC`;
-    memoryDb.orderItems = items.map((i: any) => ({
-      ...i,
-      qty: Number(i.qty),
-      harga_satuan: Number(i.harga_satuan),
-      subtotal: Number(i.subtotal),
-      panjang: i.panjang !== null ? Number(i.panjang) : null,
-      lebar: i.lebar !== null ? Number(i.lebar) : null,
-    }));
+    memoryDb.orderItems = items.map((i: any) => {
+      const isDim = Boolean(i.hitung_dimensi);
+      return {
+        ...i,
+        qty: Number(i.qty) || 1,
+        harga_satuan: Math.round(Number(i.harga_satuan) || 0),
+        subtotal: Math.round(Number(i.subtotal) || 0),
+        hitung_dimensi: isDim,
+        panjang: isDim && i.panjang !== null && i.panjang !== undefined ? Number(i.panjang) : null,
+        lebar: isDim && i.lebar !== null && i.lebar !== undefined ? Number(i.lebar) : null,
+        dimensi_unit: i.dimensi_unit || "m",
+        jumlah_lembar: i.jumlah_lembar ? Number(i.jumlah_lembar) : 1,
+      };
+    });
 
     const st = await sql`SELECT * FROM store_settings WHERE id = 1 LIMIT 1`;
     if (st.length > 0) {
@@ -592,14 +613,20 @@ export async function ensureFreshFromNeon(
       });
 
       const items = await sql`SELECT * FROM order_items ORDER BY id ASC`;
-      memoryDb.orderItems = items.map((i: any) => ({
-        ...i,
-        qty: Number(i.qty),
-        harga_satuan: Number(i.harga_satuan),
-        subtotal: Number(i.subtotal),
-        panjang: i.panjang !== null ? Number(i.panjang) : null,
-        lebar: i.lebar !== null ? Number(i.lebar) : null,
-      }));
+      memoryDb.orderItems = items.map((i: any) => {
+        const isDim = Boolean(i.hitung_dimensi);
+        return {
+          ...i,
+          qty: Number(i.qty) || 1,
+          harga_satuan: Math.round(Number(i.harga_satuan) || 0),
+          subtotal: Math.round(Number(i.subtotal) || 0),
+          hitung_dimensi: isDim,
+          panjang: isDim && i.panjang !== null && i.panjang !== undefined ? Number(i.panjang) : null,
+          lebar: isDim && i.lebar !== null && i.lebar !== undefined ? Number(i.lebar) : null,
+          dimensi_unit: i.dimensi_unit || "m",
+          jumlah_lembar: i.jumlah_lembar ? Number(i.jumlah_lembar) : 1,
+        };
+      });
     } else if (entity === "vendors") {
       const vens = await sql`SELECT * FROM vendors ORDER BY id ASC`;
       memoryDb.vendors = vens.map((v: any) => ({
@@ -816,6 +843,10 @@ export async function persistOrder(order: any, items: any[]) {
     const tanggalOrder = order.tanggal_order ? new Date(order.tanggal_order) : new Date();
     const tanggalAmbil = order.tanggal_ambil ? new Date(order.tanggal_ambil) : null;
     const shareExpires = order.share_expires_at ? new Date(order.share_expires_at) : null;
+    const subtotal = Math.round(Number(order.subtotal) || 0);
+    const diskon = Math.round(Number(order.diskon) || 0);
+    const total = Math.round(Number(order.total) || 0);
+    const jumlahDp = Math.round(Number(order.jumlah_dp) || 0);
 
     await sql`
       INSERT INTO orders (
@@ -825,8 +856,8 @@ export async function persistOrder(order: any, items: any[]) {
       ) VALUES (
         ${order.id}, ${order.nomor_nota}, ${order.nama_pelanggan}, ${order.no_wa}, 
         ${tanggalOrder}, ${tanggalAmbil}, ${order.status || 'pending'}, 
-        ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${order.jumlah_dp || 0}, 
-        ${order.catatan || ''}, ${order.subtotal || 0}, ${order.diskon || 0}, ${order.total || 0}, 
+        ${order.metode_bayar || 'Cash'}, ${order.status_bayar || 'belum'}, ${jumlahDp}, 
+        ${order.catatan || ''}, ${subtotal}, ${diskon}, ${total}, 
         ${order.created_by || 'admin'}, ${order.share_token || null}, ${shareExpires}, 
         ${progNotesStr}, ${new Date()}
       )
@@ -852,17 +883,40 @@ export async function persistOrder(order: any, items: any[]) {
     if (items && items.length > 0) {
       await sql`DELETE FROM order_items WHERE order_id = ${order.id}`;
       for (const item of items) {
-        await sql`
-          INSERT INTO order_items (
-            order_id, product_id, nama_item, qty, satuan, harga_satuan, 
-            subtotal, catatan_item, panjang, lebar, dimensi_unit, jumlah_lembar, hitung_dimensi
-          ) VALUES (
-            ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${item.qty || 1}, 
-            ${item.satuan || 'pcs'}, ${item.harga_satuan || 0}, ${item.subtotal || 0}, 
-            ${item.catatan_item || ''}, ${item.panjang || null}, ${item.lebar || null}, 
-            ${item.dimensi_unit || 'm'}, ${item.jumlah_lembar || 1}, ${item.hitung_dimensi || false}
-          );
-        `;
+        const itemQty = Number(item.qty) || 1;
+        const itemHarga = Math.round(Number(item.harga_satuan) || 0);
+        const itemSubtotal = Math.round(Number(item.subtotal) || (itemQty * itemHarga));
+        const isDim = Boolean(item.hitung_dimensi);
+        const itemP = isDim && item.panjang !== null && item.panjang !== undefined && item.panjang !== "" ? Number(item.panjang) : null;
+        const itemL = isDim && item.lebar !== null && item.lebar !== undefined && item.lebar !== "" ? Number(item.lebar) : null;
+        const itemDimUnit = item.dimensi_unit || 'm';
+        const itemLembar = item.jumlah_lembar ? Math.round(Number(item.jumlah_lembar)) : 1;
+
+        try {
+          await sql`
+            INSERT INTO order_items (
+              order_id, product_id, nama_item, qty, satuan, harga_satuan, 
+              subtotal, catatan_item, panjang, lebar, dimensi_unit, jumlah_lembar, hitung_dimensi
+            ) VALUES (
+              ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${itemQty}, 
+              ${item.satuan || 'pcs'}, ${itemHarga}, ${itemSubtotal}, 
+              ${item.catatan_item || ''}, ${itemP}, ${itemL}, 
+              ${itemDimUnit}, ${itemLembar}, ${isDim}
+            );
+          `;
+        } catch (itemErr) {
+          // Fallback in case dimension columns do not exist yet
+          await sql`
+            INSERT INTO order_items (
+              order_id, product_id, nama_item, qty, satuan, harga_satuan, 
+              subtotal, catatan_item
+            ) VALUES (
+              ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${itemQty}, 
+              ${item.satuan || 'pcs'}, ${itemHarga}, ${itemSubtotal}, 
+              ${item.catatan_item || ''}
+            );
+          `;
+        }
       }
     }
   } catch (e) {
