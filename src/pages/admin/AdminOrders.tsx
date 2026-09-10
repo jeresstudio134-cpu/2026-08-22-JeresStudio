@@ -1691,9 +1691,16 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                 <span className="text-slate-500">Total Biaya:</span>
                 <span className="font-bold text-indigo-600 dark:text-indigo-400">{formatRupiah(newlyCreatedOrder.total)}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">Status Bayar:</span>
-                <span>{getStatusBayarBadge(newlyCreatedOrder.status_bayar)}</span>
+                {(() => {
+                  const badge = getStatusBayarBadge(newlyCreatedOrder.status_bayar);
+                  return (
+                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${badge.bg}`}>
+                      {badge.label}
+                    </span>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1708,7 +1715,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                Cetak Nota A5
+                Cetak Nota A5 (Buka PDF Browser)
               </button>
               <button
                 type="button"
