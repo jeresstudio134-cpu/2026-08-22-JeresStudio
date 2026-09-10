@@ -864,6 +864,88 @@ app.get("/api/orders", authenticateToken, async (req: Request, res: Response) =>
   res.json({ orders: ordersWithItems });
 });
 
+// ==========================================
+// NAMED PDF PREVIEW STORE & STREAM ENDPOINTS
+// Memastikan browser (Edge/Chrome) mengenali nama file asli (Nama Customer - No Invoice)
+// saat melihat di iframe, tab baru, maupun klik tombol Save / Download pada PDF viewer.
+// ==========================================
+interface TempPdfItem {
+  buffer: Buffer;
+  filename: string;
+  expiresAt: number;
+}
+const tempPdfStore = new Map<string, TempPdfItem>();
+
+// Bersihkan cache PDF yang telah kedaluwarsa secara berkala
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of tempPdfStore.entries()) {
+    if (val.expiresAt < now) {
+      tempPdfStore.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+app.post(
+  "/api/pdf/preview",
+  express.raw({ type: "application/pdf", limit: "30mb" }),
+  (req: Request, res: Response) => {
+    try {
+      let buffer: Buffer | null = null;
+      let filename = (req.query.filename as string) || "Dokumen.pdf";
+
+      if (Buffer.isBuffer(req.body) && req.body.length > 0) {
+        buffer = req.body;
+      } else if (req.body && typeof req.body === "object") {
+        if (req.body.filename) filename = req.body.filename;
+        if (req.body.pdfBase64) {
+          buffer = Buffer.from(req.body.pdfBase64, "base64");
+        }
+      }
+
+      if (!buffer || buffer.length === 0) {
+        res.status(400).json({ error: "Data PDF kosong." });
+        return;
+      }
+
+      const id = randomBytes(12).toString("hex");
+      tempPdfStore.set(id, {
+        buffer,
+        filename,
+        expiresAt: Date.now() + 60 * 60 * 1000, // Aktif 1 jam
+      });
+
+      const safeFilename = encodeURIComponent(filename);
+      res.json({
+        url: `/api/pdf/view/${id}/${safeFilename}`,
+        id,
+        filename,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Gagal menyiapkan preview PDF." });
+    }
+  }
+);
+
+app.get("/api/pdf/view/:id/:filename", (req: Request, res: Response) => {
+  const { id } = req.params;
+  const item = tempPdfStore.get(id);
+  if (!item) {
+    res.status(404).send("Dokumen PDF telah kedaluwarsa atau tidak ditemukan.");
+    return;
+  }
+
+  // Gunakan nama file yang aman untuk header Content-Disposition
+  const safeAscii = item.filename.replace(/[^\w\s.-]/gi, "").trim() || "Dokumen.pdf";
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(item.filename)}`
+  );
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.send(item.buffer);
+});
+
 // Get Single Order (for detail / print invoice)
 app.get("/api/orders/:id", authenticateToken, async (req: Request, res: Response) => {
   await ensureFreshFromNeon("orders");
