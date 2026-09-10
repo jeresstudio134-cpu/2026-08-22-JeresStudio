@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { Order, StoreSettings } from "../types/index.js";
 import { formatRupiah, formatTanggal, terbilang } from "../lib/utils.js";
 import { api } from "../lib/api.js";
+import { openInAppPdfBrowserViewer } from "../components/PdfBrowserViewerModal.js";
 
 export type PaperFormat = "A4" | "A5" | "thermal58" | "thermal80";
 
@@ -34,6 +35,7 @@ export interface InvoicePdfOptions {
   action?: "open" | "download" | "print" | "blob";
   filename?: string;
   paperFormat?: PaperFormat;
+  targetWindow?: Window | null;
 }
 
 export interface InvoicePdfResult {
@@ -54,7 +56,7 @@ export function getPublicInvoiceUrl(order: Order): string {
 }
 
 /**
- * Safe PDF Output Handler: handles pop-up blockers cleanly and falls back to download
+ * Safe PDF Output Handler: Membuka halaman PDF di browser, BUKAN mendownload secara otomatis saat cetak
  */
 /**
  * Bungkus PDF Blob menjadi objek File dengan nama file yang sesuai (mis. nomor invoice)
@@ -76,29 +78,154 @@ export function safeHandlePdfOutput(
   pdfBlob: Blob,
   blobUrl: string,
   filename: string,
-  action: "download" | "open" | "print" | "blob" = "open"
+  action: "download" | "open" | "print" | "blob" = "open",
+  targetWindow?: Window | null
 ): void {
   if (typeof window === "undefined") return;
   if (action === "blob") return;
 
+  // Hanya download jika pengguna secara eksplisit menekan aksi 'download'
   if (action === "download") {
     doc.save(filename);
     return;
   }
 
+  // Jika targetWindow sudah disiapkan saat user klik (mencegah popup blocker)
+  if (targetWindow && !targetWindow.closed) {
+    try {
+      targetWindow.location.href = blobUrl;
+      targetWindow.document.title = filename;
+      if (action === "print") {
+        setTimeout(() => {
+          try {
+            targetWindow.focus();
+            targetWindow.print();
+          } catch {
+            // ignore
+          }
+        }, 600);
+      }
+      return;
+    } catch (e) {
+      console.warn("Gagal mengarahkan targetWindow:", e);
+    }
+  }
+
+  // Coba buka di tab baru browser
   try {
     const newWindow = window.open(blobUrl, "_blank");
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => document.body.removeChild(a), 300);
+    if (newWindow && !newWindow.closed) {
+      if (action === "print") {
+        setTimeout(() => {
+          try {
+            newWindow.focus();
+            newWindow.print();
+          } catch {
+            // ignore
+          }
+        }, 600);
+      }
+      return;
     }
-  } catch {
-    doc.save(filename);
+  } catch (e) {
+    console.warn("window.open dicegah oleh browser:", e);
   }
+
+  // JANGAN otomatis mendownload file! Buka penampil PDF browser (in-app modal)
+  openInAppPdfBrowserViewer({
+    blobUrl,
+    filename,
+    title: filename.replace(/\.pdf$/i, ""),
+    action,
+  });
+}
+
+/**
+ * Helper: Buka dokumen PDF langsung menuju halaman PDF browser (BUKAN download)
+ */
+export async function openDocPdfInBrowser(
+  docType: "faktur" | "surat_jalan" | "tanda_terima" | "nota",
+  order: Order,
+  settings?: StoreSettings | null,
+  paperFormat?: PaperFormat
+): Promise<InvoicePdfResult> {
+  // Buka window target secara sinkron saat user klik agar tidak diblokir popup blocker
+  let targetWindow: Window | null = null;
+  try {
+    targetWindow = window.open("about:blank", "_blank");
+    if (targetWindow) {
+      targetWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="id">
+          <head>
+            <meta charset="UTF-8" />
+            <title>Membuka PDF - ${order.nomor_nota}</title>
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                background: #0f172a;
+                color: #e2e8f0;
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              }
+              .loader {
+                width: 40px;
+                height: 40px;
+                border: 4px solid #334155;
+                border-top-color: #6366f1;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+                margin-bottom: 16px;
+              }
+              @keyframes spin { 100% { transform: rotate(360deg); } }
+              h2 { font-size: 16px; font-weight: 600; margin: 0 0 6px 0; color: #f8fafc; }
+              p { font-size: 13px; color: #94a3b8; margin: 0; }
+            </style>
+          </head>
+          <body>
+            <div class="loader"></div>
+            <h2>Menyiapkan Halaman PDF Browser...</h2>
+            <p>Memproses dokumen ${order.nomor_nota}...</p>
+          </body>
+        </html>
+      `);
+    }
+  } catch (e) {
+    console.warn("Target window setup:", e);
+  }
+
+  const options: InvoicePdfOptions = {
+    action: "open",
+    paperFormat: paperFormat || getUserPaperPreference(),
+    targetWindow,
+  };
+
+  let result: InvoicePdfResult;
+  if (docType === "surat_jalan") {
+    result = await generateSuratJalanPDF(order, settings, options);
+  } else if (docType === "tanda_terima") {
+    result = await generateTandaTerimaPDF(order, settings, options);
+  } else {
+    result = await generateInvoicePDF(order, settings, options);
+  }
+
+  return result;
+}
+
+/**
+ * Helper: Buka Faktur / Nota PDF langsung menuju halaman PDF browser (BUKAN download)
+ */
+export async function openInvoicePdfInBrowser(
+  order: Order,
+  settings?: StoreSettings | null,
+  paperFormat?: PaperFormat
+): Promise<InvoicePdfResult> {
+  return openDocPdfInBrowser("faktur", order, settings, paperFormat);
 }
 
 /**
@@ -426,7 +553,7 @@ export async function generateInvoicePDF(
     const pdfBlob = doc.output("blob");
     const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
 
-    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+    safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
     return { doc, blob: pdfBlob, blobUrl, filename };
   }
@@ -941,7 +1068,7 @@ export async function generateInvoicePDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1179,7 +1306,7 @@ export async function generateSuratJalanPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
@@ -1396,7 +1523,7 @@ export async function generateTandaTerimaPDF(
   const pdfBlob = doc.output("blob");
   const blobUrl = createNamedPdfBlobUrl(pdfBlob, filename);
 
-  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action);
+  safeHandlePdfOutput(doc, pdfBlob, blobUrl, filename, action, options.targetWindow);
 
   return { doc, blob: pdfBlob, blobUrl, filename };
 }
