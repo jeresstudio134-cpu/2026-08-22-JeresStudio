@@ -421,16 +421,35 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
     handleItemFieldChange(index, "catatan_item", newNote);
   };
 
-  const handleSubmitOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formCustomerName || !formCustomerPhone) {
-      setFormError("Nama pelanggan dan nomor WhatsApp wajib diisi.");
+  const handleSubmitOrder = async (e?: React.FormEvent) => {
+    if (e && typeof e.preventDefault === "function") {
+      e.preventDefault();
+    }
+    if (!formCustomerName || !formCustomerName.trim()) {
+      setFormError("Nama pelanggan wajib diisi.");
       return;
     }
 
-    if (formItems.length === 0) {
+    if (!formItems || formItems.length === 0) {
       setFormError("Minimal harus ada 1 item pesanan.");
       return;
+    }
+
+    // Validate that all items have names, valid positive qty and non-negative price
+    for (let i = 0; i < formItems.length; i++) {
+      const it = formItems[i];
+      if (!it.nama_item || !it.nama_item.trim()) {
+        setFormError(`Nama item pada Baris #${i + 1} belum diisi.`);
+        return;
+      }
+      if (Number(it.qty) <= 0 || isNaN(Number(it.qty))) {
+        setFormError(`Jumlah (Qty) pada Baris #${i + 1} harus lebih dari 0.`);
+        return;
+      }
+      if (Number(it.harga_satuan) < 0 || isNaN(Number(it.harga_satuan))) {
+        setFormError(`Harga satuan pada Baris #${i + 1} tidak boleh negatif.`);
+        return;
+      }
     }
 
     try {
@@ -457,10 +476,18 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         };
       });
 
+      let deadlineIso: string | null = null;
+      if (formDeadline && formDeadline.trim()) {
+        const d = new Date(formDeadline);
+        if (!isNaN(d.getTime())) {
+          deadlineIso = d.toISOString();
+        }
+      }
+
       const payload = {
         nama_pelanggan: formCustomerName.trim(),
-        no_wa: formCustomerPhone.trim(),
-        tanggal_ambil: formDeadline ? new Date(formDeadline).toISOString() : null,
+        no_wa: formCustomerPhone.trim() || "-",
+        tanggal_ambil: deadlineIso,
         status: formStatus,
         metode_bayar: formMetodeBayar,
         status_bayar: formStatusBayar,
@@ -481,9 +508,10 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         const created = await api.createOrder(payload);
         setModalOpen(false);
         setEditingOrder(null);
-        await fetchAll();
         setNewlyCreatedOrder(created.order);
         setSuccessModalOpen(true);
+        // Refresh orders list
+        fetchAll().catch((e) => console.error("Refresh orders error:", e));
       }
     } catch (err: any) {
       setFormError(err.message || "Gagal menyimpan pesanan");
@@ -1118,12 +1146,12 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
             )}
 
             {/* Scrollable Form Body */}
-            <form id="orderForm" onSubmit={handleSubmitOrder} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs">
+            <form id="orderForm" onSubmit={handleSubmitOrder} noValidate className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs">
               {/* Customer & Deadline Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Nama Pelanggan *
+                    Nama Pelanggan <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1137,12 +1165,11 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
 
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Nomor WhatsApp *
+                    Nomor WhatsApp <span className="text-slate-400 font-normal text-[11px]">(Opsional)</span>
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="081234567890"
+                    placeholder="081234567890 (atau kosongkan / -)"
                     value={formCustomerPhone}
                     onChange={(e) => setFormCustomerPhone(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1617,10 +1644,12 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
                 <button
                   type="submit"
                   form="orderForm"
+                  onClick={() => handleSubmitOrder()}
                   disabled={saving}
-                  className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors cursor-pointer"
                 >
-                  {saving ? "Menyimpan Nota..." : editingOrder ? "Simpan Perubahan Nota" : "Terbitkan Nota Order"}
+                  {saving && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{saving ? "Menyimpan Nota..." : editingOrder ? "Simpan Perubahan Nota" : "Terbitkan Nota Order"}</span>
                 </button>
               </div>
             </div>
