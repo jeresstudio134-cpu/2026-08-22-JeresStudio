@@ -6,10 +6,11 @@ import {
   DOCUMENT_CONFIGS,
   PrintDocumentRenderer,
 } from "../../components/print/PrintDocumentRenderer.js";
-import { downloadDocPdf } from "../../lib/generateInvoicePdf.js";
+import { downloadDocPdf, openDocPdf } from "../../lib/generateInvoicePdf.js";
 import {
   Printer,
   Download,
+  ExternalLink,
   FileText,
   Truck,
   Tag,
@@ -43,6 +44,7 @@ export function DedicatedPrintPage({
   const [loading, setLoading] = useState<boolean>(!initialOrder);
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [isOpeningPdf, setIsOpeningPdf] = useState<boolean>(false);
   const [hasAutoPrinted, setHasAutoPrinted] = useState<boolean>(false);
 
   const documentRef = useRef<HTMLDivElement>(null);
@@ -125,6 +127,18 @@ export function DedicatedPrintPage({
       console.error("Gagal unduh PDF:", err);
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const handleOpenPdfInBrowser = async () => {
+    if (!order) return;
+    try {
+      setIsOpeningPdf(true);
+      await openDocPdf(docType, order, settings);
+    } catch (err) {
+      console.error("Gagal buka PDF browser:", err);
+    } finally {
+      setIsOpeningPdf(false);
     }
   };
 
@@ -280,6 +294,21 @@ export function DedicatedPrintPage({
 
           {/* Action Buttons: Print & Download PDF */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenPdfInBrowser}
+              disabled={isOpeningPdf}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+              title="Buka dokumen dalam penampil PDF browser langsung"
+            >
+              {isOpeningPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              ) : (
+                <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+              )}
+              <span>Buka Halaman PDF</span>
+            </button>
+
             <button
               onClick={handleDownloadPdf}
               disabled={isDownloading}
