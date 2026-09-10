@@ -53,11 +53,16 @@ export const orderItems = pgTable("order_items", {
   order_id: integer("order_id").references(() => orders.id, { onDelete: "cascade" }).notNull(),
   product_id: integer("product_id").references(() => products.id, { onDelete: "set null" }),
   nama_item: varchar("nama_item", { length: 150 }).notNull(),
-  qty: integer("qty").default(1).notNull(),
+  qty: numeric("qty").default("1").notNull(),
   satuan: varchar("satuan", { length: 30 }).default("pcs").notNull(),
   harga_satuan: integer("harga_satuan").notNull(),
   subtotal: integer("subtotal").notNull(),
   catatan_item: text("catatan_item"),
+  panjang: numeric("panjang"),
+  lebar: numeric("lebar"),
+  dimensi_unit: varchar("dimensi_unit", { length: 20 }).default("m"),
+  jumlah_lembar: integer("jumlah_lembar").default(1),
+  hitung_dimensi: boolean("hitung_dimensi").default(false),
 });
 
 export const vendors = pgTable("vendors", {
