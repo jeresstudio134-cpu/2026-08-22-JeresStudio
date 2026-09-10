@@ -88,11 +88,28 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
       satuan: string;
       harga_satuan: number;
       catatan_item: string;
+      panjang?: number | null;
+      lebar?: number | null;
+      dimensi_unit?: string;
+      jumlah_lembar?: number;
+      hitung_dimensi?: boolean;
     }>
   >([]);
 
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Success dialog & toast states
+  const [newlyCreatedOrder, setNewlyCreatedOrder] = useState<Order | null>(null);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
 
   const fetchAll = async () => {
     try {
@@ -214,15 +231,15 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
 
   const handleOpenEdit = (order: Order) => {
     setEditingOrder(order);
-    setFormCustomerName(order.nama_pelanggan);
-    setFormCustomerPhone(order.no_wa);
+    setFormCustomerName(order.nama_pelanggan || "");
+    setFormCustomerPhone(order.no_wa || "");
     setFormDeadline(formatTanggalInput(order.tanggal_ambil));
-    setFormStatus(order.status);
-    setFormMetodeBayar(order.metode_bayar);
-    setFormStatusBayar(order.status_bayar);
-    setFormJumlahDp(order.jumlah_dp || 0);
+    setFormStatus(order.status || "pending");
+    setFormMetodeBayar(order.metode_bayar || "Cash");
+    setFormStatusBayar(order.status_bayar || "belum");
+    setFormJumlahDp(Math.round(Number(order.jumlah_dp) || 0));
     setFormCatatan(order.catatan || "");
-    setFormDiskon(order.diskon || 0);
+    setFormDiskon(Math.round(Number(order.diskon) || 0));
 
     if (order.items && order.items.length > 0) {
       setFormItems(
@@ -230,15 +247,15 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
           const isHitungDim = Boolean(i.hitung_dimensi);
           return {
             product_id: i.product_id || null,
-            nama_item: i.nama_item,
-            qty: i.qty,
-            satuan: i.satuan,
-            harga_satuan: i.harga_satuan,
+            nama_item: i.nama_item || "Item",
+            qty: Number(i.qty) || 1,
+            satuan: i.satuan || "pcs",
+            harga_satuan: Math.round(Number(i.harga_satuan) || 0),
             catatan_item: i.catatan_item || "",
             panjang: isHitungDim && i.panjang !== undefined && i.panjang !== null ? Number(i.panjang) : null,
             lebar: isHitungDim && i.lebar !== undefined && i.lebar !== null ? Number(i.lebar) : null,
             dimensi_unit: i.dimensi_unit || "m",
-            jumlah_lembar: i.jumlah_lembar ? Number(i.jumlah_lembar) : 1,
+            jumlah_lembar: i.jumlah_lembar ? Math.round(Number(i.jumlah_lembar)) : 1,
             hitung_dimensi: isHitungDim,
           };
         })
@@ -250,7 +267,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
           nama_item: "Item Cetakan",
           qty: 1,
           satuan: "pcs",
-          harga_satuan: order.total,
+          harga_satuan: Math.round(Number(order.total) || 0),
           catatan_item: "",
           panjang: null,
           lebar: null,
@@ -423,39 +440,51 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
       // Clean item dimensions: if hitung_dimensi is off, force panjang and lebar to null
       const sanitizedItems = formItems.map((item) => {
         const isDim = Boolean(item.hitung_dimensi);
+        const pNum = isDim && item.panjang !== undefined && item.panjang !== null && (item.panjang as any) !== "" ? Number(item.panjang) : null;
+        const lNum = isDim && item.lebar !== undefined && item.lebar !== null && (item.lebar as any) !== "" ? Number(item.lebar) : null;
         return {
-          ...item,
-          panjang: isDim && item.panjang ? Number(item.panjang) : null,
-          lebar: isDim && item.lebar ? Number(item.lebar) : null,
+          product_id: item.product_id ? Number(item.product_id) : null,
+          nama_item: item.nama_item.trim(),
+          qty: Number(item.qty) || 1,
+          satuan: item.satuan || "pcs",
+          harga_satuan: Math.round(Number(item.harga_satuan) || 0),
+          catatan_item: item.catatan_item || "",
+          panjang: pNum,
+          lebar: lNum,
+          dimensi_unit: item.dimensi_unit || "m",
+          jumlah_lembar: item.jumlah_lembar ? Math.round(Number(item.jumlah_lembar)) : 1,
           hitung_dimensi: isDim,
         };
       });
 
       const payload = {
-        nama_pelanggan: formCustomerName,
-        no_wa: formCustomerPhone,
+        nama_pelanggan: formCustomerName.trim(),
+        no_wa: formCustomerPhone.trim(),
         tanggal_ambil: formDeadline ? new Date(formDeadline).toISOString() : null,
         status: formStatus,
         metode_bayar: formMetodeBayar,
         status_bayar: formStatusBayar,
-        jumlah_dp: Number(formJumlahDp) || 0,
+        jumlah_dp: Math.round(Number(formJumlahDp) || 0),
         catatan: formCatatan,
-        diskon: Number(formDiskon) || 0,
+        diskon: Math.round(Number(formDiskon) || 0),
         items: sanitizedItems,
       };
 
       if (editingOrder) {
+        const notaNum = editingOrder.nomor_nota;
         await api.updateOrder(editingOrder.id, payload);
+        setModalOpen(false);
+        setEditingOrder(null);
+        await fetchAll();
+        setSuccessToast(`Perubahan pada Nota #${notaNum} berhasil disimpan!`);
       } else {
         const created = await api.createOrder(payload);
-        // Prompt to print or view
-        if (confirm(`Order ${created.order.nomor_nota} berhasil dibuat! Ingin langsung cetak nota A5?`)) {
-          onPrintOrder(created.order);
-        }
+        setModalOpen(false);
+        setEditingOrder(null);
+        await fetchAll();
+        setNewlyCreatedOrder(created.order);
+        setSuccessModalOpen(true);
       }
-
-      setModalOpen(false);
-      fetchAll();
     } catch (err: any) {
       setFormError(err.message || "Gagal menyimpan pesanan");
     } finally {
@@ -1071,7 +1100,10 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
               </div>
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setEditingOrder(null);
+                }}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 ✕
@@ -1574,7 +1606,10 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
               <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setModalOpen(false);
+                    setEditingOrder(null);
+                  }}
                   className="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg cursor-pointer transition-colors"
                 >
                   Batal
@@ -1627,6 +1662,83 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
         }}
         settings={settings}
       />
+
+      {/* Success Modal after Creating Order */}
+      {successModalOpen && newlyCreatedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 dark:border-slate-800 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/60 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600 dark:text-emerald-400 shadow-inner">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
+              Pesanan Berhasil Disimpan!
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
+              Data order telah tersimpan di sistem. Anda dapat mencetak nota A5 sekarang atau kapan saja melalui daftar pesanan.
+            </p>
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-4 mb-6 text-left border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Nomor Nota:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{newlyCreatedOrder.nomor_nota}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Pelanggan:</span>
+                <span className="font-medium text-slate-800 dark:text-slate-200">{newlyCreatedOrder.nama_pelanggan}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Biaya:</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">{formatRupiah(newlyCreatedOrder.total)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Status Bayar:</span>
+                <span>{getStatusBayarBadge(newlyCreatedOrder.status_bayar)}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuccessModalOpen(false);
+                  onPrintOrder(newlyCreatedOrder);
+                  setNewlyCreatedOrder(null);
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                Cetak Nota A5
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuccessModalOpen(false);
+                  setNewlyCreatedOrder(null);
+                }}
+                className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Toast */}
+      {successToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-xl animate-in fade-in slide-in-from-bottom-4">
+          <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+          <span>{successToast}</span>
+          <button
+            type="button"
+            onClick={() => setSuccessToast(null)}
+            className="ml-2 text-white/80 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
