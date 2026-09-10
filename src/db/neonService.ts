@@ -905,20 +905,30 @@ export async function persistOrder(order: any, items: any[]) {
             );
           `;
         } catch (itemErr) {
-          // Fallback in case dimension columns do not exist yet
-          await sql`
-            INSERT INTO order_items (
-              order_id, product_id, nama_item, qty, satuan, harga_satuan, 
-              subtotal, catatan_item
-            ) VALUES (
-              ${order.id}, ${item.product_id || null}, ${item.nama_item}, ${itemQty}, 
-              ${item.satuan || 'pcs'}, ${itemHarga}, ${itemSubtotal}, 
-              ${item.catatan_item || ''}
-            );
-          `;
+          // Fallback in case dimension columns do not exist yet or product foreign key fails
+          try {
+            await sql`
+              INSERT INTO order_items (
+                order_id, product_id, nama_item, qty, satuan, harga_satuan, 
+                subtotal, catatan_item
+              ) VALUES (
+                ${order.id}, null, ${item.nama_item}, ${itemQty}, 
+                ${item.satuan || 'pcs'}, ${itemHarga}, ${itemSubtotal}, 
+                ${item.catatan_item || ''}
+              );
+            `;
+          } catch (innerErr) {
+            console.error("Failed to insert order item into Neon:", innerErr);
+          }
         }
       }
     }
+
+    // Auto-advance PostgreSQL serial sequences to prevent any future duplicate key collisions
+    try {
+      await sql`SELECT setval(pg_get_serial_sequence('orders', 'id'), COALESCE((SELECT MAX(id) FROM orders), 1))`;
+      await sql`SELECT setval(pg_get_serial_sequence('order_items', 'id'), COALESCE((SELECT MAX(id) FROM order_items), 1))`;
+    } catch {}
   } catch (e) {
     console.error("Error persisting order to Neon:", e);
   }
