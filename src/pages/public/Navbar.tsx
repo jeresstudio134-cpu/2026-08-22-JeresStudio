@@ -90,10 +90,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Dark Mode Toggle */}
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Toggle Dark Mode"
+              className="p-2 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 transition-colors cursor-pointer"
+              title={darkMode ? "Ganti ke Mode Terang" : "Ganti ke Mode Gelap"}
+              aria-label="Toggle Mode Gelap/Terang"
             >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {darkMode ? (
+                <Sun className="w-4 h-4 text-amber-500 transition-transform hover:rotate-45" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-700 dark:text-slate-300 transition-transform hover:-rotate-12" />
+              )}
             </button>
 
             {/* WA Order Button */}
@@ -121,9 +126,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex md:hidden items-center gap-2">
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg"
+              className="p-2 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 transition-colors"
+              title={darkMode ? "Ganti ke Mode Terang" : "Ganti ke Mode Gelap"}
+              aria-label="Toggle Mode Gelap/Terang"
             >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {darkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-slate-700 dark:text-slate-300" />}
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

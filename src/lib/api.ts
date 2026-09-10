@@ -12,7 +12,48 @@ export function setStoredToken(token: string | null): void {
   }
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+
+const clientApiCache = new Map<string, CacheEntry>();
+const inFlightClientRequests = new Map<string, Promise<any>>();
+const CLIENT_CACHE_TTL = 15_000; // 15 detik client memory cache
+
+export function clearClientApiCache(pattern?: string) {
+  if (pattern) {
+    for (const key of clientApiCache.keys()) {
+      if (key.includes(pattern)) {
+        clientApiCache.delete(key);
+      }
+    }
+  } else {
+    clientApiCache.clear();
+  }
+}
+
+export interface CustomRequestInit extends RequestInit {
+  bypassCache?: boolean;
+}
+
+async function request<T>(endpoint: string, options: CustomRequestInit = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  const isGet = method === "GET";
+
+  // Pada aksi mutasi (POST, PUT, PATCH, DELETE), hapus cache agar UI selalu menyajikan data terkini
+  if (!isGet) {
+    clearClientApiCache();
+  } else if (!options.bypassCache) {
+    const cached = clientApiCache.get(endpoint);
+    if (cached && Date.now() - cached.timestamp < CLIENT_CACHE_TTL) {
+      return cached.data as T;
+    }
+    if (inFlightClientRequests.has(endpoint)) {
+      return inFlightClientRequests.get(endpoint) as Promise<T>;
+    }
+  }
+
   const token = getStoredToken();
   const headers: HeadersInit = {
     "Content-Type": "application/json",
@@ -20,18 +61,36 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...(options.headers || {}),
   };
 
-  const response = await fetch(endpoint, {
-    ...options,
-    headers,
-  });
+  const fetchPromise = (async () => {
+    try {
+      const response = await fetch(endpoint, {
+        ...options,
+        headers,
+      });
 
-  const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    throw new Error(data.error || `HTTP error ${response.status}`);
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error ${response.status}`);
+      }
+
+      if (isGet) {
+        clientApiCache.set(endpoint, { data, timestamp: Date.now() });
+      }
+
+      return data as T;
+    } finally {
+      if (isGet) {
+        inFlightClientRequests.delete(endpoint);
+      }
+    }
+  })();
+
+  if (isGet && !options.bypassCache) {
+    inFlightClientRequests.set(endpoint, fetchPromise);
   }
 
-  return data as T;
+  return fetchPromise;
 }
 
 export const api = {
@@ -561,4 +620,6 @@ export const api = {
         };
       };
     }>("/api/integrations/status"),
+
+  clearCache: (pattern?: string) => clearClientApiCache(pattern),
 };

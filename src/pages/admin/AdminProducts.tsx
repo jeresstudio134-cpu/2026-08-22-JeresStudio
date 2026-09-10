@@ -142,7 +142,9 @@ export const AdminProducts: React.FC = () => {
 
   const fetchProducts = async () => {
     try {
-      setLoading(true);
+      if (products.length === 0) {
+        setLoading(true);
+      }
       const res = await api.getProducts({ activeOnly: false });
       setProducts(res.products);
     } catch (err) {

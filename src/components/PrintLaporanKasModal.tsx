@@ -93,11 +93,10 @@ export const PrintLaporanKasModal: React.FC<PrintLaporanKasModalProps> = ({
         return "7 Hari Terakhir";
       case "month":
         return "Bulan Ini (" + new Date().toLocaleString("id-ID", { month: "long", year: "numeric" }) + ")";
-      case "lastMonth": {
+      case "lastMonth":
         const prevMonthDate = new Date();
         prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
         return "Bulan Lalu (" + prevMonthDate.toLocaleString("id-ID", { month: "long", year: "numeric" }) + ")";
-      }
       case "custom":
         if (filterInfo.startDate && filterInfo.endDate) {
           return `${formatTanggal(filterInfo.startDate)} s/d ${formatTanggal(filterInfo.endDate)}`;
@@ -145,6 +144,7 @@ export const PrintLaporanKasModal: React.FC<PrintLaporanKasModalProps> = ({
       return;
     }
 
+    // Try isolated hidden iframe print first to bypass any parent styling or display:none restrictions
     try {
       let printFrame = document.getElementById("print-laporan-iframe") as HTMLIFrameElement;
       if (!printFrame) {

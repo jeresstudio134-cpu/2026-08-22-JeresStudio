@@ -866,7 +866,7 @@ export async function generateInvoicePDF(
   autoTable(doc, {
     startY: currentY,
     margin: { left: marginX, right: marginX },
-    head: [["NO", "DESKRIPSI ITEM CETAK", "QTY", "HARGA SATUAN", "SUBTOTAL"]],
+    head: [["NO", "DESKRIPSI ITEM", "QTY", "HARGA SATUAN", "SUBTOTAL"]],
     body: tableBody,
     theme: "grid",
     headStyles: {

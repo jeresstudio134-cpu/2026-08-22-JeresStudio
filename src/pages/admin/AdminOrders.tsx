@@ -113,7 +113,9 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ onPrintOrder, settings
 
   const fetchAll = async () => {
     try {
-      setLoading(true);
+      if (orders.length === 0) {
+        setLoading(true);
+      }
       const [orderRes, prodRes] = await Promise.all([
         api.getOrders({
           status: statusFilter,

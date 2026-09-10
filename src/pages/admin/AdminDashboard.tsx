@@ -54,7 +54,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchStats = async () => {
     try {
-      setLoading(true);
+      if (!stats) {
+        setLoading(true);
+      }
       const data = await api.getDashboardStats();
       setStats(data);
     } catch (err) {

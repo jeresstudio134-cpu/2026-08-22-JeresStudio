@@ -4,6 +4,7 @@ import {
   generateInvoicePDF,
   generateSuratJalanPDF,
   generateTandaTerimaPDF,
+  openDocPdfInBrowser,
   getUserPaperPreference,
   setUserPaperPreference,
   PaperFormat,
@@ -141,21 +142,13 @@ export const DocumentPrintPreviewModal: React.FC<DocumentPrintPreviewModalProps>
     }
   };
 
-  // Action: Print Now
+  // Action: Print Now (Membuka halaman PDF browser & dialog print)
   const handlePrint = async () => {
     try {
       setIsPrinting(true);
-      // Trigger PDF printer or browser print
-      const options = { action: "print" as const, paperFormat: paperFormat };
-      if (docType === "faktur") {
-        await generateInvoicePDF(order, settings, options);
-      } else if (docType === "surat_jalan") {
-        await generateSuratJalanPDF(order, settings, options);
-      } else {
-        await generateTandaTerimaPDF(order, settings, options);
-      }
+      await openDocPdfInBrowser(docType, order, settings, paperFormat);
     } catch (err: any) {
-      console.error("Gagal cetak:", err);
+      console.error("Gagal membuka halaman PDF:", err);
       window.print();
     } finally {
       setIsPrinting(false);
@@ -247,13 +240,14 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
               onClick={handlePrint}
               disabled={isPrinting}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              title="Buka halaman PDF di browser dan mulai mencetak"
             >
               {isPrinting ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Printer className="w-3.5 h-3.5" />
               )}
-              <span>Cetak Sekarang</span>
+              <span>Cetak (Buka PDF Browser)</span>
             </button>
 
             <button
@@ -477,38 +471,42 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
                     {docType === "faktur" && <span>TOTAL</span>}
                   </div>
 
-                  {(order.items || []).map((item, idx) => (
-                    <div key={idx} className="flex flex-col text-[10.5px]">
-                      <div className="font-semibold text-slate-900 leading-snug">
-                        {idx + 1}. {item.nama_item}
+                  {(order.items || []).map((item, idx) => {
+                    const hasDim = Boolean(item.hitung_dimensi && item.panjang && item.lebar);
+                    const noteText = item.catatan_item || item.catatan;
+                    return (
+                      <div key={idx} className="flex flex-col text-[10.5px]">
+                        <div className="font-semibold text-slate-900 leading-snug">
+                          {idx + 1}. {item.nama_item}
+                        </div>
+
+                        {/* Dimension / custom notes (respects hitung_dimensi) */}
+                        {(hasDim || noteText) && (
+                          <div className="text-[9.5px] text-slate-500 pl-3">
+                            {hasDim
+                              ? `${item.panjang}${item.dimensi_unit || "m"} × ${item.lebar}${item.dimensi_unit || "m"}${item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar} lbr)` : ""}`
+                              : ""}
+                            {noteText ? `${hasDim ? " • " : ""}${noteText}` : ""}
+                          </div>
+                        )}
+
+                        {docType === "faktur" ? (
+                          <div className="flex justify-between text-[10px] text-slate-600 pl-3 pt-0.5">
+                            <span>
+                              {item.qty} {item.satuan || "pcs"} × {formatRp(item.harga_satuan || 0)}
+                            </span>
+                            <span className="font-semibold text-slate-900">
+                              {formatRp(item.subtotal || 0)}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-600 pl-3 pt-0.5 font-medium">
+                            Qty: {item.qty} {item.satuan || "pcs"}
+                          </div>
+                        )}
                       </div>
-
-                      {/* Dimension / custom notes */}
-                      {((item.panjang && item.lebar) || item.catatan_item) && (
-                        <div className="text-[9.5px] text-slate-500 pl-3">
-                          {item.panjang && item.lebar
-                            ? `${item.panjang}${item.dimensi_unit || "m"} × ${item.lebar}${item.dimensi_unit || "m"}${item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar} lbr)` : ""}`
-                            : ""}
-                          {item.catatan_item ? `${item.panjang && item.lebar ? " • " : ""}${item.catatan_item}` : ""}
-                        </div>
-                      )}
-
-                      {docType === "faktur" ? (
-                        <div className="flex justify-between text-[10px] text-slate-600 pl-3 pt-0.5">
-                          <span>
-                            {item.qty} {item.satuan || "pcs"} × {formatRp(item.harga_satuan || 0)}
-                          </span>
-                          <span className="font-semibold text-slate-900">
-                            {formatRp(item.subtotal || 0)}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-slate-600 pl-3 pt-0.5 font-medium">
-                          Qty: {item.qty} {item.satuan || "pcs"}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="border-t border-dashed border-slate-400 my-0.5" />
@@ -723,42 +721,46 @@ _Terima kasih telah mempercayakan kebutuhan cetak Anda kepada ${storeName}!_`;
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-800">
-                      {(order.items || []).map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80">
-                          <td className="py-2.5 px-3 text-center font-medium text-slate-500">
-                            {idx + 1}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <div className="font-semibold text-slate-900">{item.nama_item}</div>
-                            {((item.panjang && item.lebar) || item.catatan_item) && (
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                {item.panjang && item.lebar
-                                  ? `${item.panjang}${item.dimensi_unit || "m"} × ${item.lebar}${item.dimensi_unit || "m"}${item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar} lbr)` : ""}`
-                                  : ""}
-                                {item.catatan_item ? `${item.panjang && item.lebar ? " • " : ""}${item.catatan_item}` : ""}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-medium">
-                            {item.qty} {item.satuan || "pcs"}
-                          </td>
-                          {docType === "faktur" && (
-                            <>
-                              <td className="py-2.5 px-3 text-right font-mono">
-                                {formatRp(item.harga_satuan || 0)}
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                                {formatRp(item.subtotal || 0)}
-                              </td>
-                            </>
-                          )}
-                          {docType !== "faktur" && (
-                            <td className="py-2.5 px-3 text-center text-[11px] text-slate-500">
-                              Lengkap & Baik
+                      {(order.items || []).map((item, idx) => {
+                        const hasDim = Boolean(item.hitung_dimensi && item.panjang && item.lebar);
+                        const noteText = item.catatan_item || item.catatan;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/80">
+                            <td className="py-2.5 px-3 text-center font-medium text-slate-500">
+                              {idx + 1}
                             </td>
-                          )}
-                        </tr>
-                      ))}
+                            <td className="py-2.5 px-3">
+                              <div className="font-semibold text-slate-900">{item.nama_item}</div>
+                              {(hasDim || noteText) && (
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  {hasDim
+                                    ? `${item.panjang}${item.dimensi_unit || "m"} × ${item.lebar}${item.dimensi_unit || "m"}${item.jumlah_lembar && item.jumlah_lembar > 1 ? ` (${item.jumlah_lembar} lbr)` : ""}`
+                                    : ""}
+                                  {noteText ? `${hasDim ? " • " : ""}${noteText}` : ""}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-medium">
+                              {item.qty} {item.satuan || "pcs"}
+                            </td>
+                            {docType === "faktur" && (
+                              <>
+                                <td className="py-2.5 px-3 text-right font-mono">
+                                  {formatRp(item.harga_satuan || 0)}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
+                                  {formatRp(item.subtotal || 0)}
+                                </td>
+                              </>
+                            )}
+                            {docType !== "faktur" && (
+                              <td className="py-2.5 px-3 text-center text-[11px] text-slate-500">
+                                Lengkap & Baik
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
